@@ -1,1 +1,212 @@
+<html>
+<head>
+    <script type="text/javascript" src="scripts/common-0.0.1.js"></script>
+</head>
+<style>
+    body { font-family: "Trebuchet MS", Arial, Helvetica, sans-serif; font-size: 13px; margin: 0; padding: 4px; }
+    #fdMaps { width: 100%; border-collapse: collapse; }
+    #fdMaps th { text-align: left; padding: 5px 6px; border-bottom: 2px solid #b3b3b3; }
+    #fdMaps td { padding: 4px 6px; border-bottom: 1px solid #dcdcdc; word-break: break-all; }
+    #goAdd, .delMap { cursor: pointer; }
+    #goAdd { display: inline-block; padding: 6px 2px; font-weight: bold; }
+    .delMap { color: #b03030; font-weight: bold; }
+    #fdEmpty { color: #666; padding: 10px 6px; }
 
+    /* Own dialog. The host page's setDialogMode() exists in the modern theme but
+       does not render, and parent.currentNode is out of reach from this frame, so
+       the plugin no longer borrows either of them. */
+    #fdOverlay { display: none; position: fixed; left: 0; top: 0; right: 0; bottom: 0;
+                 background: rgba(0,0,0,0.35); z-index: 1000; }
+    #fdDlg { position: absolute; left: 50%; top: 40px; transform: translateX(-50%);
+             background: #fff; border: 1px solid #808080; box-shadow: 0 4px 18px rgba(0,0,0,0.3);
+             min-width: 420px; max-width: 90%; }
+    #fdDlgHead { background: #f0f0f0; border-bottom: 1px solid #d0d0d0; padding: 7px 10px; font-weight: bold; }
+    #fdDlgBody { padding: 10px; max-height: 60vh; overflow: auto; }
+    #fdDlgFoot { padding: 8px 10px; text-align: right; border-top: 1px solid #e0e0e0; }
+    #fdDlgFoot input { margin-left: 6px; padding: 3px 14px; }
+    .fdfh { padding: 3px 4px; cursor: pointer; }
+    .fdfh:hover { background: #eef4fb; }
+    .fdfh.sel { font-weight: bold; background: #dceaf7; }
+    #fdFileList { max-height: 300px; overflow: auto; border: 1px solid #d8d8d8; margin-bottom: 8px; }
+    #fdErr { color: #7a2020; padding: 6px 0; display: none; }
+    .fdInput { width: 100%; box-sizing: border-box; padding: 4px; }
+</style>
+<body onload="doOnLoad();">
+<div id="fileDistUser">
+  <div id="fileDist_main">
+      <table id="fdMaps">
+          <tr><th width="40%">Server Path</th><th width="40%">Client Path</th><th width="20%">Delete</th></tr>
+      </table>
+      <div id="fdEmpty">No files are distributed to this device yet.</div>
+      <span id="goAdd" onclick="goAdd();">[+]</span>
+  </div>
+</div>
+
+<div id="fdOverlay" onclick="if (event.target === this) fdClose();">
+  <div id="fdDlg">
+    <div id="fdDlgHead">&nbsp;</div>
+    <div id="fdDlgBody"></div>
+    <div id="fdErr"></div>
+    <div id="fdDlgFoot">
+      <input type="button" id="fdCancel" value="Cancel" onclick="fdClose();" />
+      <input type="button" id="fdOk" value="OK" onclick="fdConfirm();" />
+    </div>
+  </div>
+</div>
+</body>
+<script type="text/javascript">
+var filemaps = {{{filemaps}}};
+var sPathsToNPaths = {};
+var fTree = [];
+var loc = [];
+var niceLoc = [];
+var fdOnOk = null;
+var fdSelectedPath = '';
+
+// The host page keeps currentNode out of window scope in the modern theme, so the
+// device is taken from the query string this frame was opened with instead.
+function fdNodeId() {
+    var m = /[?&]node=([^&]+)/.exec(window.location.search);
+    return (m == null) ? null : decodeURIComponent(m[1]);
+}
+
+function fdEsc(s) {
+    return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
+}
+
+function fdOpen(title, bodyHtml, onOk, okLabel) {
+    document.getElementById('fdDlgHead').textContent = title;
+    document.getElementById('fdDlgBody').innerHTML = bodyHtml;
+    document.getElementById('fdErr').style.display = 'none';
+    document.getElementById('fdOk').value = (okLabel || 'OK');
+    document.getElementById('fdOk').style.display = (onOk == null) ? 'none' : '';
+    fdOnOk = onOk;
+    document.getElementById('fdOverlay').style.display = 'block';
+}
+function fdClose() { document.getElementById('fdOverlay').style.display = 'none'; fdOnOk = null; }
+function fdShowErr(text) {
+    var d = document.getElementById('fdErr');
+    d.textContent = text; d.style.display = 'block';
+}
+function fdConfirm() { var f = fdOnOk; if (f != null) { f(); } }
+function fdFocus(id) { var el = document.getElementById(id); if (el != null) { el.focus(); } }
+
+document.addEventListener('keydown', function (e) {
+    if (document.getElementById('fdOverlay').style.display != 'block') return;
+    if (e.key == 'Escape') { fdClose(); }
+    if ((e.key == 'Enter') && (fdOnOk != null) && (e.target.tagName != 'TEXTAREA')) { fdConfirm(); }
+});
+
+function doOnLoad() {
+  fTree = []; loc = []; niceLoc = [];
+  try { parseFileTree(); } catch (e) { fTree = []; }
+  parseNicePaths();
+  redrawMaps();
+}
+function parseNicePaths() {
+    sPathsToNPaths = {};
+    fTree.forEach(function(f) { sPathsToNPaths[f.linkpath] = f.nicepath; });
+}
+function redrawMaps() {
+    var fdMapTbl = document.getElementById('fdMaps');
+    var fdMapRows = document.querySelectorAll('.fmRow');
+    for (var i = 0; i < fdMapRows.length; i++) { fdMapRows[i].parentNode.removeChild(fdMapRows[i]); }
+    filemaps.forEach(function(m) {
+        var nice = sPathsToNPaths[m.serverpath] || m.serverpath;
+        var tpl = '<td>' + fdEsc(nice) + '</td>' +
+                  '<td>' + fdEsc(m.clientpath) + '</td>' +
+                  '<td><span class="delMap" onclick="deleteMap(this);">X</span></td>';
+        var tr = fdMapTbl.insertRow(-1);
+        tr.innerHTML = tpl;
+        tr.classList.add('fmRow');
+        tr.setAttribute('x-data-id', m._id);
+    });
+    document.getElementById('fdEmpty').style.display = (filemaps.length == 0) ? '' : 'none';
+}
+
+function goAdd() {
+    fdSelectedPath = '';
+    if (fTree.length == 0) {
+        fdOpen('Choose File to Distribute',
+            'No files were found under My Files. Upload a file on the Files tab first, then try again.', null);
+        return;
+    }
+    var h = '<div id="fdFileList">';
+    fTree.forEach(function (a) {
+        h += '<div class="fdfh" x-data-spath="' + fdEsc(a.linkpath) + '" onclick="fileSelected(this);">' + fdEsc(a.nicepath) + '</div>';
+    });
+    h += '</div><div>Filter: <input id="fdfilter" class="fdInput" type="text" onkeyup="filterFiles(this);" /></div>';
+    fdOpen('Choose File to Distribute', h, goAddEx, 'Next');
+    fdFocus('fdfilter');
+}
+function fileSelected(el) {
+    fdSelectedPath = el.getAttribute('x-data-spath');
+    var rows = document.querySelectorAll('.fdfh');
+    for (var i = 0; i < rows.length; i++) { rows[i].classList.remove('sel'); }
+    el.classList.add('sel');
+}
+function filterFiles(el) {
+    var val = el.value.toLowerCase();
+    var rows = document.querySelectorAll('.fdfh');
+    for (var i = 0; i < rows.length; i++) {
+        rows[i].style.display = (rows[i].textContent.toLowerCase().indexOf(val) >= 0) ? '' : 'none';
+    }
+}
+function goAddEx() {
+    if (fdSelectedPath == '') { fdShowErr('Choose a file from the list first.'); return; }
+    var keep = fdSelectedPath;
+    fdOpen('Choose Location on Endpoint',
+        '<div style="margin-bottom:6px;">Full path the file should have on the device:</div>' +
+        '<input type="text" class="fdInput" placeholder="C:\\Users\\Public\\Desktop\\MyFile.ext" id="fdclientPath" />',
+        function () { goAddEx2(keep); }, 'Add');
+    fdFocus('fdclientPath');
+}
+function goAddEx2(spath) {
+    var cpath = document.getElementById('fdclientPath').value.trim();
+    if (cpath == '') { fdShowErr('Enter the path the file should have on the device.'); return; }
+    var nodeid = fdNodeId();
+    if (nodeid == null) { fdShowErr('This device could not be identified. Reload the page and try again.'); return; }
+    parent.meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'addFileMap',
+        spath: spath, cpath: cpath, currentNodeId: nodeid });
+    fdClose();
+}
+function deleteMap(el) {
+    var mid = el.parentNode.parentNode.getAttribute('x-data-id');
+    fdOpen('Delete File Map?', 'Stop distributing this file to the device?', function () {
+        var nodeid = fdNodeId();
+        parent.meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'deleteMap',
+            id: mid, currentNodeId: nodeid });
+        fdClose();
+    }, 'Delete');
+}
+
+parent.pluginHandler.filedist.loadMaps = function (msg) {
+    if (msg.event.nodeId == fdNodeId()) {
+        filemaps = msg.event.mapData;
+        doOnLoad();
+    }
+};
+
+function parseFileTree(tree) {
+    if (tree == null) {
+        fTree = []; loc = []; niceLoc = [];
+        if ((parent.filetree == null) || (parent.filetree.f == null)) return;
+        return parseFileTree(parent.filetree.f);
+    }
+    for (var k in tree) {
+        var v = tree[k];
+        if (v.t != 3) {
+            if (v.t == 4) { loc = []; niceLoc = []; }
+            loc.push(k);
+            niceLoc.push(v.n || k);
+        }
+        if (v.t <= 2 || v.t == 4) parseFileTree(v.f);
+        if (v.t == 3) {
+            fTree.push({ linkpath: loc.join('/') + '/' + k, nicepath: niceLoc.join('/') + '/' + k });
+        }
+    }
+    loc.pop(); niceLoc.pop();
+}
+</script>
+</html>
