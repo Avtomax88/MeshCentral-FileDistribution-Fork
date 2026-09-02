@@ -1,0 +1,18 @@
+{
+  "name": "File Distribution",
+  "shortName": "filedist",
+  "version": "0.1.0",
+  "author": "Ryan Blenis; fork maintained by Avtomax88",
+  "description": "Distribute files from the \"My Files\" tab to your endpoints. Personal fork with modern-theme dialogs and rights checks on every action.",
+  "hasAdminPanel": false,
+  "homepage": "https://github.com/Avtomax88/MeshCentral-FileDistribution-Fork",
+  "changelogUrl": "https://raw.githubusercontent.com/Avtomax88/MeshCentral-FileDistribution-Fork/main/changelog.md",
+  "configUrl": "https://raw.githubusercontent.com/Avtomax88/MeshCentral-FileDistribution-Fork/main/config.json",
+  "downloadUrl": "https://github.com/Avtomax88/MeshCentral-FileDistribution-Fork/archive/main.zip",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Avtomax88/MeshCentral-FileDistribution-Fork.git"
+  },
+  "versionHistoryUrl": "https://api.github.com/repos/Avtomax88/MeshCentral-FileDistribution-Fork/tags",
+  "meshCentralCompat": ">=1.1.35"
+}
