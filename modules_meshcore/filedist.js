@@ -51,6 +51,7 @@ function consoleaction(args, rights, sessionid, parent) {
     switch (fnname) {
         case 'setMaps':
             dbg('resetting maps');
+            fileMaps = {}; // the server sends the full set, so drop anything stale first
             var maps = args.maps;
             maps.forEach(function(m) {
                 saveFileVerification({ clientpath: m.clientpath, filesize: m.filesize });
@@ -62,6 +63,42 @@ function consoleaction(args, rights, sessionid, parent) {
             var m = args.map;
             saveFileVerification({ clientpath: m.clientpath, filesize: m.filesize });
             fetchFile(m.clientpath);
+        break;
+        case 'removeMap':
+            var rfn = args.clientpath;
+            // Read the size we recorded for this map before dropping it: it is what
+            // tells us the file on disk is still the one we put there.
+            var rexp = fileMaps[rfn];
+            dbg('removing map ' + rfn + (args.deleteFile === true ? ' (and the file)' : ''));
+            if (fileBuffer[rfn] != null) {
+                try { fileBuffer[rfn].end(); } catch (e) { }
+                delete fileBuffer[rfn];
+            }
+            if (fileMaps[rfn] != null) { delete fileMaps[rfn]; }
+            if (args.deleteFile === true) {
+                if (typeof rexp != 'number') {
+                    dbg('not deleting ' + rfn + ': no known size for this map, so it cannot be confirmed as ours');
+                    break;
+                }
+                var ract = null;
+                try { ract = fs.statSync(rfn).size; } catch (e) { ract = null; }
+                if (ract == null) {
+                    dbg('nothing to delete, ' + rfn + ' is not there');
+                    break;
+                }
+                if (ract !== rexp) {
+                    dbg('not deleting ' + rfn + ': it is ' + ract + ' bytes but we distributed ' + rexp + ', so it has been replaced or edited');
+                    break;
+                }
+                try {
+                    if (typeof fs.unlinkSync == 'function') { fs.unlinkSync(rfn); }
+                    else if (typeof fs.unlink == 'function') { fs.unlink(rfn); }
+                    else { dbg('no unlink available in this agent'); break; }
+                    dbg('deleted ' + rfn);
+                } catch (e) {
+                    dbg('could not delete ' + rfn + ': ' + e);
+                }
+            }
         break;
         case 'sendFile':
             try {
