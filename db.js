@@ -57,6 +57,11 @@ module.exports.CreateDB = function(meshserver) {
                 filesize: filesize
             });
         };
+        obj.getMapsByServerPath = function(serverpath) {
+            return obj.fdFile.find(
+                { type: 'map', serverpath: serverpath }
+            ).toArray();
+        };
         obj.getNodesForServerPath = function(serverpath, nodeScope) {
             if (nodeScope == null || !Array.isArray(nodeScope)) {
               nodeScope = [];

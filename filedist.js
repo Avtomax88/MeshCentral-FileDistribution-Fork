@@ -24,7 +24,9 @@ module.exports.filedist = function (parent) {
     obj.intervalTimer = null;
     obj.exports = [
       'onDeviceRefreshEnd',
-      'mapData'
+      'mapData',
+      'overviewData',
+      'bulkResult'
     ];
     var PLUGIN_L = 'filedist';
     var PLUGIN_C = 'FileDist';
@@ -200,11 +202,19 @@ module.exports.filedist = function (parent) {
             tabTitle: 'File Distribution ',
             tabId: 'pluginFileDist'
         });
-        QA('pluginFileDist', '<iframe id="pluginIframeFileDist" style="width: 100%; height: 800px;" scrolling="no" frameBorder=0 src="/pluginadmin.ashx?pin=filedist&user=1&node='+ currentNode._id +'" />');
+        QA('pluginFileDist', '<iframe id="pluginIframeFileDist" allow="fullscreen" style="width: 100%; height: 800px;" scrolling="no" frameBorder=0 src="/pluginadmin.ashx?pin=filedist&user=1&node='+ currentNode._id +'" />');
     };
 
     obj.mapData = function (message) {
         if (typeof pluginHandler.filedist.loadMaps == 'function') pluginHandler.filedist.loadMaps(message);
+    };
+
+    obj.overviewData = function (message) {
+        if (typeof pluginHandler.filedist.loadOverview == 'function') pluginHandler.filedist.loadOverview(message);
+    };
+
+    obj.bulkResult = function (message) {
+        if (typeof pluginHandler.filedist.onBulkResult == 'function') pluginHandler.filedist.onBulkResult(message);
     };
 
     obj.handleAdminReq = function(req, res, user) {
@@ -212,7 +222,8 @@ module.exports.filedist = function (parent) {
         var isAdmin = (user.siteadmin == FULLRIGHTS);
 
         if (req.query.admin == 1) {
-            if (!isAdmin) { res.sendStatus(401); return; }
+            // Not gated on site admin: the page lists only devices this user may
+            // manage, and every action re-checks rights on the server anyway.
             res.render(obj.VIEWS + 'admin', {});
             return;
         } else if (req.query.user == 1) {
@@ -297,6 +308,122 @@ module.exports.filedist = function (parent) {
         }
     };
 
+    // ------------------------------------------------------------------
+    //  Bulk work
+    //
+    //  A server can hold a few hundred devices, so nothing here loops over the
+    //  whole list in one go: work is done in small batches that yield to the
+    //  event loop, and every node is checked against the caller's rights
+    //  individually. Nodes the caller may not touch are skipped, not refused,
+    //  so one stray device cannot fail the whole operation.
+    // ------------------------------------------------------------------
+
+    var BATCH = 10;      // nodes handled before yielding
+    var BATCH_PAUSE = 20; // ms between batches
+    var MAX_TARGETS = 1000;
+
+    // Keeps only the maps whose node this user may manage. A site admin skips the
+    // lookups entirely; everyone else resolves each distinct node once.
+    obj.filterMapsByRights = function (user, maps, func) {
+        if ((user == null) || !Array.isArray(maps)) { func([]); return; }
+        if (user.siteadmin == FULLRIGHTS) { func(maps); return; }
+        var ids = [], seen = {};
+        maps.forEach(function (m) { if ((m.node != null) && (seen[m.node] !== true)) { seen[m.node] = true; ids.push(m.node); } });
+        var allowed = {}, i = 0;
+        var step = function () {
+            if (i >= ids.length) {
+                func(maps.filter(function (m) { return allowed[m.node] === true; }));
+                return;
+            }
+            var nid = ids[i++];
+            obj.userCanManageNode(user, nid, function (ok) {
+                allowed[nid] = ok;
+                if ((i % BATCH) == 0) { setTimeout(step, BATCH_PAUSE); } else { step(); }
+            });
+        };
+        step();
+    };
+
+    obj.bulkAddFileMap = function (user, nodeids, spath, cpath, func) {
+        if (!Array.isArray(nodeids) || (nodeids.length == 0)) { func({ added: 0, skipped: 0, error: 'No devices were selected.' }); return; }
+        if (nodeids.length > MAX_TARGETS) { func({ added: 0, skipped: 0, error: 'Too many devices in one go (limit ' + MAX_TARGETS + ').' }); return; }
+        if (!obj.isSafeServerPath(spath) || !obj.isSaneClientPath(cpath)) { func({ added: 0, skipped: 0, error: 'That path could not be used.' }); return; }
+        var real = obj.getServerFilePath(spath);
+        if (real == null) { func({ added: 0, skipped: 0, error: 'That server file could not be resolved.' }); return; }
+        var sz = null;
+        try { sz = require('fs').statSync(real.fullpath).size; } catch (e) { sz = null; }
+
+        var added = 0, skipped = 0, i = 0;
+        var one = function (nid, next) {
+            obj.userCanManageNode(user, nid, function (ok) {
+                if (!ok) { skipped++; next(); return; }
+                obj.db.findFileForNode(nid, cpath)
+                .then(function (existing) {
+                    if (Array.isArray(existing) && (existing.length > 0)) { skipped++; next(); return; } // already distributed there
+                    obj.db.addFileMap(nid, spath, cpath, sz)
+                    .then(function () { added++; obj.sendMap(nid, { clientpath: cpath, filesize: sz }); next(); })
+                    .catch(function () { skipped++; next(); });
+                })
+                .catch(function () { skipped++; next(); });
+            });
+        };
+        var step = function () {
+            if (i >= nodeids.length) { func({ added: added, skipped: skipped }); return; }
+            var nid = nodeids[i++];
+            one(nid, function () {
+                if ((i % BATCH) == 0) { setTimeout(step, BATCH_PAUSE); } else { step(); }
+            });
+        };
+        step();
+    };
+
+    obj.bulkDeleteMaps = function (user, ids, deleteFile, func) {
+        if (!Array.isArray(ids) || (ids.length == 0)) { func({ removed: 0, skipped: 0, error: 'Nothing was selected.' }); return; }
+        if (ids.length > MAX_TARGETS) { func({ removed: 0, skipped: 0, error: 'Too many entries in one go (limit ' + MAX_TARGETS + ').' }); return; }
+        var removed = 0, skipped = 0, i = 0, touched = {};
+        var one = function (id, next) {
+            obj.db.get(id)
+            .then(function (maps) {
+                if (!Array.isArray(maps) || (maps.length == 0)) { skipped++; next(); return; }
+                var map = maps[0];
+                obj.userCanManageNode(user, map.node, function (ok) {
+                    if (!ok) { skipped++; next(); return; }
+                    obj.db.delete(id)
+                    .then(function () {
+                        removed++;
+                        touched[map.node] = true;
+                        obj.sendRemoveMap(map.node, map.clientpath, (deleteFile === true));
+                        next();
+                    })
+                    .catch(function () { skipped++; next(); });
+                });
+            })
+            .catch(function () { skipped++; next(); });
+        };
+        var step = function () {
+            if (i >= ids.length) {
+                Object.keys(touched).forEach(function (nid) { obj.updateFrontEnd({ maps: true, nodeId: nid }); });
+                func({ removed: removed, skipped: skipped });
+                return;
+            }
+            var id = ids[i++];
+            one(id, function () {
+                if ((i % BATCH) == 0) { setTimeout(step, BATCH_PAUSE); } else { step(); }
+            });
+        };
+        step();
+    };
+
+    // Results go to the caller alone, using the same dispatch path the device tab
+    // already uses for map updates.
+    obj.replyToUser = function (user, pluginaction, payload) {
+        try {
+            var msg = { nolog: true, action: 'plugin', plugin: PLUGIN_L, pluginaction: pluginaction, domain: user.domain };
+            for (var k in payload) { msg[k] = payload[k]; }
+            obj.meshServer.DispatchEvent([user._id], obj, msg);
+        } catch (e) { }
+    };
+
     obj.serveraction = function(command, myparent, grandparent) {
         var user = myparent.user;
         switch (command.pluginaction) {
@@ -357,6 +484,28 @@ module.exports.filedist = function (parent) {
                     obj.sendFile(map.node, map.serverpath, map.clientpath, map.filesize);
                 })
                 .catch(e => console.log('PLUGIN: FileDistribution: Could not complete fetchFile', e.stack))
+                break;
+            }
+            case 'getOverview': {
+                obj.db.getServerFiles()
+                .then(function (maps) {
+                    obj.filterMapsByRights(user, maps, function (allowed) {
+                        obj.replyToUser(user, 'overviewData', { maps: allowed });
+                    });
+                })
+                .catch(function () { obj.replyToUser(user, 'overviewData', { maps: [], error: 'The list could not be read.' }); });
+                break;
+            }
+            case 'addFileMapBulk': {
+                obj.bulkAddFileMap(user, command.nodeids, command.spath, command.cpath, function (res) {
+                    obj.replyToUser(user, 'bulkResult', { kind: 'add', result: res });
+                });
+                break;
+            }
+            case 'deleteMapsBulk': {
+                obj.bulkDeleteMaps(user, command.ids, (command.deleteFile === true), function (res) {
+                    obj.replyToUser(user, 'bulkResult', { kind: 'delete', result: res });
+                });
                 break;
             }
             default:
