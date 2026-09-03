@@ -76,27 +76,42 @@ function consoleaction(args, rights, sessionid, parent) {
             }
             if (fileMaps[rfn] != null) { delete fileMaps[rfn]; }
             if (args.deleteFile === true) {
-                if (typeof rexp != 'number') {
-                    dbg('not deleting ' + rfn + ': no known size for this map, so it cannot be confirmed as ours');
-                    break;
-                }
                 var ract = null;
                 try { ract = fs.statSync(rfn).size; } catch (e) { ract = null; }
                 if (ract == null) {
                     dbg('nothing to delete, ' + rfn + ' is not there');
+                    fdReport(rfn, true, 'already absent');
                     break;
                 }
-                if (ract !== rexp) {
-                    dbg('not deleting ' + rfn + ': it is ' + ract + ' bytes but we distributed ' + rexp + ', so it has been replaced or edited');
+                // The recorded size confirms the file is still the one we placed.
+                // When the agent has no record (restarted, or the map predates it)
+                // the server sends the size it holds, which is the same value.
+                var known = (typeof rexp == 'number') ? rexp : ((typeof args.filesize == 'number') ? args.filesize : null);
+                if (known == null) {
+                    dbg('not deleting ' + rfn + ': no known size for this map');
+                    fdReport(rfn, false, 'no known size');
                     break;
                 }
-                try {
-                    if (typeof fs.unlinkSync == 'function') { fs.unlinkSync(rfn); }
-                    else if (typeof fs.unlink == 'function') { fs.unlink(rfn); }
-                    else { dbg('no unlink available in this agent'); break; }
-                    dbg('deleted ' + rfn);
-                } catch (e) {
-                    dbg('could not delete ' + rfn + ': ' + e);
+                if (ract !== known) {
+                    dbg('not deleting ' + rfn + ': it is ' + ract + ' bytes but we distributed ' + known);
+                    fdReport(rfn, false, 'changed on disk (' + ract + ' vs ' + known + ')');
+                    break;
+                }
+                var how = fdDeleteFile(rfn);
+                if (how == null) {
+                    dbg('could not delete ' + rfn + ': no working method');
+                    fdReport(rfn, false, 'no working delete method');
+                    break;
+                }
+                // The shell fallback is asynchronous, so confirm rather than assume.
+                var still = null;
+                try { still = fs.statSync(rfn).size; } catch (e) { still = null; }
+                if ((still == null) || (how == 'unlinkSync')) {
+                    dbg('deleted ' + rfn + ' via ' + how);
+                    fdReport(rfn, true, how);
+                } else {
+                    dbg('delete via ' + how + ' did not take effect immediately for ' + rfn);
+                    fdReport(rfn, true, how + ' (queued)');
                 }
             }
         break;
@@ -131,6 +146,35 @@ function consoleaction(args, rights, sessionid, parent) {
         break;
     }
 }
+// The agent's fs module is a reduced one and does not carry unlink on every
+// build, so deletion tries the plain calls first and falls back to the shell.
+// Returns the name of the method that worked, or null.
+function fdDeleteFile(fn) {
+    try { if (typeof fs.unlinkSync == 'function') { fs.unlinkSync(fn); return 'unlinkSync'; } } catch (e) { dbg('unlinkSync failed: ' + e); }
+    try { if (typeof fs.unlink == 'function') { fs.unlink(fn); return 'unlink'; } } catch (e) { dbg('unlink failed: ' + e); }
+    var win = false;
+    try { win = (require('os').platform() == 'win32'); } catch (e) { try { win = (process.platform == 'win32'); } catch (e2) { } }
+    try {
+        var cp = require('child_process');
+        if (win) {
+            var comspec = null;
+            try { comspec = process.env['windir'] + '\\system32\\cmd.exe'; } catch (e) { comspec = 'cmd.exe'; }
+            cp.execFile(comspec, ['cmd', '/c', 'del /f /q "' + fn + '"']);
+            return 'cmd del';
+        }
+        cp.execFile('/bin/sh', ['sh', '-c', "rm -f '" + String(fn).replace(/'/g, "'\\''") + "'"]);
+        return 'rm';
+    } catch (e) { dbg('shell delete failed: ' + e); }
+    return null;
+}
+
+function fdReport(clientpath, ok, detail) {
+    try {
+        mesh.SendCommand({ action: 'plugin', plugin: 'filedist', pluginaction: 'removeResult',
+                           clientpath: clientpath, ok: (ok === true), detail: String(detail) });
+    } catch (e) { }
+}
+
 function fetchFile(cPath) {
     mesh.SendCommand({ 
         "action": "plugin", 
