@@ -18,6 +18,10 @@
     .fdGrow { flex: 1; min-height: 0; display: flex; }
     .fdFixed { flex: 0 0 auto; }
     .fdRow { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 8px; }
+    /* The growing row fills the panel, so its columns start at the top rather
+       than sitting on the baseline like the short rows do. */
+    .fdRow.fdGrow { align-items: stretch; flex-wrap: nowrap; }
+    .fdRow.fdGrow > .fdCol { display: flex; flex-direction: column; min-height: 0; }
     .fdCol { flex: 1; min-width: 180px; }
     .fdCol label { display: block; color: #555; margin-bottom: 3px; }
     input[type=text] { width: 100%; box-sizing: border-box; padding: 4px; }
