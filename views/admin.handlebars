@@ -101,7 +101,12 @@
       </div>
     </div>
 
-    <h3 style="margin-top:14px;">Devices</h3>
+  </div>
+</div>
+
+<div class="fdPanel">
+  <div class="fdPanelHead"><span class="grow">Devices</span></div>
+  <div class="fdPanelBody">
     <div class="fdPills">
       <span class="fdPill on" id="fdPillAll" onclick="fdSetPill('all');">All<span class="cnt" id="fdCntAll">0</span></span>
       <span class="fdPill" id="fdPillOnline" onclick="fdSetPill('online');">Online<span class="cnt" id="fdCntOnline">0</span></span>
@@ -169,6 +174,18 @@ var fdCanManageUi = false;
 var RECENT_KEY = 'fd_recentFolders';
 var RECENT_MAX = 10;
 
+// The page runs either as a frame inside MeshCentral or as a standalone tab
+// opened from the My Devices button. In the second case the host window is the
+// opener, not the parent, and everything here is read from it.
+function fdHost() {
+    try { if (window.parent && (window.parent !== window) && window.fdHost().meshserver) return window.parent; } catch (e) { }
+    try { if (window.opener && window.opener.meshserver) return window.opener; } catch (e) { }
+    return window.parent || window;
+}
+function fdHostOk() {
+    try { return (fdHost().meshserver != null); } catch (e) { return false; }
+}
+
 function fdEsc(s) {
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
         .replace(/>/g, '&gt;').replace(/"/g, '&quot;').replace(/'/g, '&#39;');
@@ -216,7 +233,7 @@ function fdToggleBig() {
 }
 // Panel heights are remembered per browser. Each panel body carries the resize
 // handle now, and its children stretch to follow.
-var FD_DEF_H = [230, 300, 220];
+var FD_DEF_H = [190, 300, 220];
 function fdPanels() { return document.querySelectorAll('.fdPanelBody'); }
 function fdLoadHeights() {
     var saved = {};
@@ -255,6 +272,13 @@ document.addEventListener('fullscreenchange', function () {
 });
 
 function fdInit() {
+    if (!fdHostOk()) {
+        document.body.innerHTML = '<div style="padding:20px;font-family:Arial;">' +
+          'This page needs the MeshCentral window it was opened from. That window was closed, ' +
+          'or this tab was reloaded on its own.<br><br>Open it again from My Devices, or use ' +
+          'My Server &gt; Plugins &gt; File Distribution.</div>';
+        return;
+    }
     fdReadNodes();
     fdReadFiles();
     fdRenderMeshes();
@@ -265,11 +289,11 @@ function fdInit() {
     fdApplyPreselect();
     fdLoadHeights();
     fdWatchHeights();
-    parent.pluginHandler.filedist.loadOverview = function (msg) { fdOnOverview(msg.event); };
-    parent.pluginHandler.filedist.onBulkResult = function (msg) { fdOnBulk(msg.event); };
-    parent.pluginHandler.filedist.onUiConfig = function (msg) { fdOnUiConfig(msg.event); };
+    fdHost().pluginHandler.filedist.loadOverview = function (msg) { fdOnOverview(msg.event); };
+    fdHost().pluginHandler.filedist.onBulkResult = function (msg) { fdOnBulk(msg.event); };
+    fdHost().pluginHandler.filedist.onUiConfig = function (msg) { fdOnUiConfig(msg.event); };
     fdLoadOverview();
-    try { parent.meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'getUiConfig' }); } catch (e) { }
+    try { fdHost().meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'getUiConfig' }); } catch (e) { }
 }
 
 // Devices passed in via ?preselect=id1,id2 from the My Devices toolbar button.
@@ -286,10 +310,10 @@ function fdApplyPreselect() {
 function fdReadNodes() {
     fdNodes = []; fdMeshes = [];
     try {
-        var ms = parent.meshes || {};
+        var ms = fdHost().meshes || {};
         for (var k in ms) { if (ms[k] && (ms[k].mtype == 2)) { fdMeshes.push({ id: k, name: ms[k].name || k }); } }
         fdMeshes.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
-        var ns = parent.nodes || [];
+        var ns = fdHost().nodes || [];
         for (var i = 0; i < ns.length; i++) {
             var n = ns[i];
             if (n.mtype != 2) continue;
@@ -316,7 +340,7 @@ function fdReadFiles() {
             }
             loc.pop(); nice.pop();
         };
-        if (parent.filetree && parent.filetree.f) walk(parent.filetree.f);
+        if (fdHost().filetree && fdHost().filetree.f) walk(fdHost().filetree.f);
     } catch (e) { fdFiles = []; }
 }
 
@@ -481,7 +505,7 @@ function fdDistribute() {
         'Devices you cannot manage are skipped. Offline devices receive the file when they next connect.</div>',
         function () {
             document.getElementById('fdGo').disabled = true;
-            parent.meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'addFileMapBulk',
+            fdHost().meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'addFileMapBulk',
                 nodeids: ids, spath: fdPicked, cpath: cpath });
             fdRecentAdd(folder);
             fdClose();
@@ -489,7 +513,7 @@ function fdDistribute() {
 }
 
 function fdLoadOverview() {
-    parent.meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'getOverview' });
+    fdHost().meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'getOverview' });
 }
 function fdNodeName(id) {
     for (var i = 0; i < fdNodes.length; i++) { if (fdNodes[i].id == id) return fdNodes[i].name; }
@@ -550,7 +574,7 @@ function fdConfirmRemove(title, question, clientpath, ids) {
         'A file that was replaced or edited on a device is left alone.</div>',
         function () {
             var del = document.getElementById('fdDelFileBulk').checked;
-            parent.meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'deleteMapsBulk', ids: ids, deleteFile: del });
+            fdHost().meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'deleteMapsBulk', ids: ids, deleteFile: del });
             fdClose();
         }, 'Remove');
 }
@@ -587,7 +611,7 @@ function fdOpenSettings() {
         (fdCanManageUi ? '' : '<div class="fdMuted" style="margin-top:8px;">Changing this needs full site administrator rights.</div>');
     fdOpen('My Devices button', body, fdCanManageUi ? function () {
         var on = document.getElementById('fdDevBtnChk').checked;
-        parent.meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'saveUiConfig', config: { devicesButton: on } });
+        fdHost().meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'saveUiConfig', config: { devicesButton: on } });
         fdShow('ok', 'Saved. Reload My Devices to see the change.');
         fdClose();
     } : null, 'Save');
