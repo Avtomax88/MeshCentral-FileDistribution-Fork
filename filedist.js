@@ -599,7 +599,8 @@ module.exports.filedist = function (parent) {
                 // debugging inside the agent itself.
                 if (myparent.dbNodeKey == null) return;
                 obj.debug('PLUGIN', PLUGIN_C, 'Delete on ' + myparent.dbNodeKey + ' for ' + command.clientpath +
-                          ': ' + ((command.ok === true) ? 'done' : 'refused') + ' (' + command.detail + ')');
+                          ': ' + ((command.ok === true) ? 'done' : 'refused') + ' (' + command.detail +
+                          ', agent module ' + (command.ver || 'pre-0.5.2') + ')');
                 break;
             }
             case 'getUiConfig': {
