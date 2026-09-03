@@ -24,15 +24,34 @@ module.exports.filedist = function (parent) {
     obj.intervalTimer = null;
     obj.exports = [
       'onDeviceRefreshEnd',
+      'onWebUIStartupEnd',
       'mapData',
       'overviewData',
-      'bulkResult'
+      'bulkResult',
+      'uiConfig'
     ];
     var PLUGIN_L = 'filedist';
     var PLUGIN_C = 'FileDist';
 
     var MESHRIGHT_MANAGECOMPUTERS = 4;
     var FULLRIGHTS = 0xFFFFFFFF;
+    obj.isAdmin = function (user) { return (user != null) && (user.siteadmin == FULLRIGHTS); };
+
+    // A single global on/off switch for the My Devices button. Deliberately not
+    // per-user: it changes the toolbar layout everyone sees, so only a site admin
+    // may flip it, same as the rest of this admin page's write actions.
+    obj.uiConfigId = 'plugin_filedist_uiconfig';
+    obj.loadUiConfig = function (func) {
+        obj.meshServer.db.Get(obj.uiConfigId, function (err, docs) {
+            var cfg = { devicesButton: false };
+            if ((err == null) && Array.isArray(docs) && (docs.length > 0) && (docs[0].config != null)) { cfg = docs[0].config; }
+            func(cfg);
+        });
+    };
+    obj.saveUiConfig = function (raw, func) {
+        var cfg = { devicesButton: (raw && (raw.devicesButton === true)) };
+        obj.meshServer.db.Set({ _id: obj.uiConfigId, config: cfg }, function () { func(cfg); });
+    };
 
     obj.sendAllMaps = function(comp, maps) {
         const command = {
@@ -203,6 +222,50 @@ module.exports.filedist = function (parent) {
             tabId: 'pluginFileDist'
         });
         QA('pluginFileDist', '<iframe id="pluginIframeFileDist" allow="fullscreen" style="width: 100%; height: 800px;" scrolling="no" frameBorder=0 src="/pluginadmin.ashx?pin=filedist&user=1&node='+ currentNode._id +'" />');
+    };
+
+    // Runs once when the page first loads. Asks the server whether the My Devices
+    // button is turned on; uiConfig() does the actual injection once the answer
+    // arrives, since the toolbar the button attaches to may not exist yet here.
+    obj.onWebUIStartupEnd = function () {
+        try { meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'getUiConfig' }); } catch (e) { }
+    };
+
+    obj.uiConfig = function (message) {
+        // Replies arrive through DispatchEvent, which nests the payload under
+        // .event; a direct send would not. Accept either shape.
+        var m = (message && message.event) ? message.event : message;
+        var cfg = (m && m.config) ? m.config : {};
+        // The management page registers this to show the current setting.
+        try {
+            if (typeof pluginHandler.filedist.onUiConfig == 'function') {
+                pluginHandler.filedist.onUiConfig({ event: { config: cfg, canManageUi: (m ? m.canManageUi : false) } });
+            }
+        } catch (e) { }
+        if (cfg.devicesButton !== true) return;
+        if ((pluginHandler.filedist._btnDone === true)) return;
+        pluginHandler.filedist._btnDone = true;
+        try {
+            var ga = document.getElementById('GroupActionButton');
+            if (ga == null) return; // this theme/version does not expose the toolbar we attach to
+            var b = document.createElement('button');
+            b.id = 'fdDevicesBtn'; b.type = 'button';
+            b.className = (typeof showModal === 'function') ? (ga.className + ' fdDevBtnBs').replace('btn-primary', 'btn-secondary') : 'fdDevBtn';
+            b.title = 'Distribute a file to the selected devices';
+            b.textContent = '\u2318 Distribute File';
+            b.style.marginLeft = '4px';
+            b.disabled = ga.disabled;
+            b.onclick = function () {
+                var ids = [];
+                try { ids = (typeof getCheckedDevices == 'function') ? getCheckedDevices() : []; } catch (e) { }
+                // A plain link avoids depending on any internal page-navigation
+                // function, so it keeps working regardless of theme changes.
+                var url = '/pluginadmin.ashx?pin=filedist' + ((ids.length > 0) ? ('&preselect=' + encodeURIComponent(ids.join(','))) : '');
+                window.open(url, '_blank');
+            };
+            ga.parentNode.insertBefore(b, ga.nextSibling);
+            new MutationObserver(function () { b.disabled = ga.disabled; }).observe(ga, { attributes: true, attributeFilter: ['disabled'] });
+        } catch (e) { }
     };
 
     obj.mapData = function (message) {
@@ -506,6 +569,23 @@ module.exports.filedist = function (parent) {
             case 'deleteMapsBulk': {
                 obj.bulkDeleteMaps(user, command.ids, (command.deleteFile === true), function (res) {
                     obj.replyToUser(user, 'bulkResult', { kind: 'delete', result: res });
+                });
+                break;
+            }
+            case 'getUiConfig': {
+                // Uses the same dispatch path as the rest of this plugin's replies,
+                // which is the one known to reach the browser here.
+                obj.loadUiConfig(function (cfg) {
+                    obj.replyToUser(user, 'uiConfig', { config: cfg, canManageUi: obj.isAdmin(user) });
+                });
+                break;
+            }
+            case 'saveUiConfig': {
+                if (!obj.isAdmin(user)) { obj.debug('PLUGIN', PLUGIN_C, 'Refused saveUiConfig: not a site admin'); return; }
+                obj.saveUiConfig(command.config, function (cfg) {
+                    obj.replyToUser(user, 'uiConfig', { config: cfg, canManageUi: true });
+                    // Other open sessions pick the change up without a reload.
+                    obj.meshServer.DispatchEvent(['*'], obj, { nolog: true, action: 'plugin', plugin: PLUGIN_L, pluginaction: 'uiConfig', config: cfg, domain: user.domain });
                 });
                 break;
             }
