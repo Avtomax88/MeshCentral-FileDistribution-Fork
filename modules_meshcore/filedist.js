@@ -13,6 +13,7 @@ var db = require('SimpleDataStore').Shared();
 var debug_flag = false;
 var periodicFileIntegrityTimer = null;
 var fileMaps = {};
+var FD_MOD_VER = '0.5.2'; // reported to the server so a stale agent core is obvious
 
 var fs = require('fs');
 var fileBuffer = {};
@@ -75,6 +76,7 @@ function consoleaction(args, rights, sessionid, parent) {
                 delete fileBuffer[rfn];
             }
             if (fileMaps[rfn] != null) { delete fileMaps[rfn]; }
+            if (args.deleteFile !== true) { fdReport(rfn, true, 'map removed, file kept'); break; }
             if (args.deleteFile === true) {
                 var ract = null;
                 try { ract = fs.statSync(rfn).size; } catch (e) { ract = null; }
@@ -171,7 +173,7 @@ function fdDeleteFile(fn) {
 function fdReport(clientpath, ok, detail) {
     try {
         mesh.SendCommand({ action: 'plugin', plugin: 'filedist', pluginaction: 'removeResult',
-                           clientpath: clientpath, ok: (ok === true), detail: String(detail) });
+                           clientpath: clientpath, ok: (ok === true), detail: String(detail), ver: FD_MOD_VER });
     } catch (e) { }
 }
 
