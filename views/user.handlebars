@@ -153,20 +153,72 @@ function filterFiles(el) {
         rows[i].style.display = (rows[i].textContent.toLowerCase().indexOf(val) >= 0) ? '' : 'none';
     }
 }
+// Splits a My Files link path into the folder part and the file name.
+function fdBaseName(linkpath) {
+    var p = String(linkpath == null ? '' : linkpath).split('/');
+    return p[p.length - 1];
+}
+
+// Windows and POSIX targets are both possible, so the separator is taken from
+// what the operator typed rather than assumed.
+function fdJoin(folder, name) {
+    folder = String(folder == null ? '' : folder).trim();
+    if (folder == '') return '';
+    var sep = ((folder.indexOf('\\') != -1) || /^[A-Za-z]:/.test(folder)) ? '\\' : '/';
+    var trimmed = folder.replace(/[\\\/]+$/, '');
+    if (trimmed == '') { trimmed = folder.charAt(0); } // folder was just a root separator
+    return trimmed + sep + name;
+}
+
+function fdPreview() {
+    var folder = document.getElementById('fdclientFolder').value;
+    var nameEl = document.getElementById('fdclientName');
+    var name = (nameEl.value.trim() == '') ? fdBaseName(fdSelectedPath) : nameEl.value.trim();
+    var full = fdJoin(folder, name);
+    document.getElementById('fdpreview').textContent = (full == '') ? '\u2014' : full;
+}
+
 function goAddEx() {
     if (fdSelectedPath == '') { fdShowErr('Choose a file from the list first.'); return; }
     var keep = fdSelectedPath;
+    var orig = fdBaseName(keep);
     fdOpen('Choose Location on Endpoint',
-        '<div style="margin-bottom:6px;">Full path the file should have on the device:</div>' +
-        '<input type="text" class="fdInput" placeholder="C:\\Users\\Public\\Desktop\\MyFile.ext" id="fdclientPath" />',
+        '<div style="margin-bottom:6px;">Folder on the device:</div>' +
+        '<input type="text" class="fdInput" placeholder="C:\\Users\\Public\\Desktop" id="fdclientFolder" list="fdFolderHist" oninput="fdPreview();" /><datalist id="fdFolderHist"></datalist>' +
+        '<div style="margin:10px 0 6px 0;">Save as <span style="color:#666;">(leave empty to keep <b>' + fdEsc(orig) + '</b>)</span>:</div>' +
+        '<input type="text" class="fdInput" placeholder="' + fdEsc(orig) + '" id="fdclientName" oninput="fdPreview();" />' +
+        '<div style="margin-top:10px;color:#666;">Will be written to:</div>' +
+        '<div id="fdpreview" style="font-family:Consolas,monospace;word-break:break-all;">\u2014</div>',
         function () { goAddEx2(keep); }, 'Add');
-    fdFocus('fdclientPath');
+    fdFocus('fdclientFolder');
+    // Same 10-entry history the bulk distribution page uses; typing here shares it.
+    try {
+        var hist = JSON.parse(localStorage.getItem('fd_recent_paths') || '[]');
+        var list = document.getElementById('fdFolderHist');
+        hist.forEach(function (p) { var o = document.createElement('option'); o.value = p; list.appendChild(o); });
+    } catch (e) { }
+}
+function fdRememberFolder(folder) {
+    folder = String(folder || '').trim();
+    if (folder == '') return;
+    try {
+        var arr = JSON.parse(localStorage.getItem('fd_recent_paths') || '[]')
+            .filter(function (x) { return x.toLowerCase() != folder.toLowerCase(); });
+        arr.unshift(folder);
+        localStorage.setItem('fd_recent_paths', JSON.stringify(arr.slice(0, 10)));
+    } catch (e) { }
 }
 function goAddEx2(spath) {
-    var cpath = document.getElementById('fdclientPath').value.trim();
-    if (cpath == '') { fdShowErr('Enter the path the file should have on the device.'); return; }
+    var folder = document.getElementById('fdclientFolder').value.trim();
+    if (folder == '') { fdShowErr('Enter the folder the file should go into.'); return; }
+    var typed = document.getElementById('fdclientName').value.trim();
+    var name = (typed == '') ? fdBaseName(spath) : typed;
+    if (/[\\\/]/.test(name)) { fdShowErr('The file name cannot contain a slash. Put folders in the field above.'); return; }
+    var cpath = fdJoin(folder, name);
+    if (cpath == '') { fdShowErr('That folder could not be read as a path.'); return; }
     var nodeid = fdNodeId();
     if (nodeid == null) { fdShowErr('This device could not be identified. Reload the page and try again.'); return; }
+    fdRememberFolder(folder);
     parent.meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'addFileMap',
         spath: spath, cpath: cpath, currentNodeId: nodeid });
     fdClose();
