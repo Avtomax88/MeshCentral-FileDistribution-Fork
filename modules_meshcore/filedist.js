@@ -114,7 +114,9 @@ function consoleaction(args, rights, sessionid, parent) {
                     return;
                 }
                 if (fileBuffer[fn] == null) {
-                    fileBuffer[fn] = fs.createWriteStream(fn, { flags: 'wb' });
+                    // 'w' opens for writing and truncates an existing file first, so a
+                    // shorter replacement never leaves old bytes trailing at the end.
+                    fileBuffer[fn] = fs.createWriteStream(fn, { flags: 'w' });
                 }
                 
                 var buf = Buffer.from(args.data, "hex");
