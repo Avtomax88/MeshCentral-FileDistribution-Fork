@@ -9,7 +9,10 @@
     .fdPanelHead { background: #f4f4f4; border-bottom: 1px solid #e0e0e0; padding: 7px 10px;
                    font-weight: bold; display: flex; align-items: center; }
     .fdPanelHead .grow { flex: 1; }
-    .fdPanelBody { padding: 10px; }
+    .fdPanelHead button { margin-left: 6px; }
+    /* Each panel gets its own resize handle so the three blocks can be sized
+       independently; a drag handle appears at the bottom-right corner. */
+    .fdPanelBody { padding: 10px; resize: vertical; overflow: auto; min-height: 150px; }
     .fdRow { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 8px; }
     .fdCol { flex: 1; min-width: 180px; }
     .fdCol label { display: block; color: #555; margin-bottom: 3px; }
@@ -23,9 +26,9 @@
     .fdPill .cnt { opacity: 0.75; margin-left: 5px; }
 
     .fdLists { display: flex; gap: 10px; align-items: stretch; }
-    .fdListBox { border: 1px solid #d8d8d8; overflow: auto; height: 260px; padding: 4px; }
+    .fdListBox { border: 1px solid #d8d8d8; overflow: auto; height: 260px; padding: 4px; resize: vertical; min-height: 120px; }
     #fdNodeBox { flex: 2; }
-    #fdMeshBox { flex: 1; }
+    #fdMeshBox, #fdTagBox { flex: 1; }
     .fdListHead { font-weight: bold; color: #555; padding: 2px 4px 5px 4px; }
     .fdItem { display: block; padding: 2px 4px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
     .fdItem:hover { background: #eef4fb; }
@@ -33,19 +36,27 @@
     .fdOn { background: #3c9a3c; } .fdOff { background: #b03030; }
     .fdCount { color: #555; margin-left: 8px; }
 
-    #fdFileBox { border: 1px solid #d8d8d8; height: 130px; overflow: auto; }
+    #fdFileBox { border: 1px solid #d8d8d8; height: 130px; overflow: auto; resize: vertical; min-height: 80px; }
     .fdFile { padding: 3px 5px; cursor: pointer; }
     .fdFile:hover { background: #eef4fb; }
     .fdFile.sel { background: #dceaf7; font-weight: bold; }
 
+    .fdRecentWrap { margin-top: 6px; }
+    .fdRecentLbl { color: #666; margin-right: 4px; }
+    .fdRecentChip { display: inline-block; border: 1px solid #dcdcdc; border-radius: 9px; padding: 0 8px;
+                    margin: 3px 4px 0 0; background: #fafafa; cursor: pointer; font-family: Consolas, monospace; }
+    .fdRecentChip:hover { background: #eef4fb; }
+
     table.fdOv { width: 100%; border-collapse: collapse; }
-    table.fdOv th { text-align: left; padding: 5px 6px; border-bottom: 2px solid #b3b3b3; }
+    table.fdOv th { text-align: left; padding: 5px 6px; border-bottom: 2px solid #b3b3b3; position: sticky; top: 0; background: #fff; }
     table.fdOv td { padding: 4px 6px; border-bottom: 1px solid #e4e4e4; vertical-align: top; word-break: break-all; }
     .fdMono { font-family: Consolas, monospace; }
     .fdMuted { color: #666; }
     .fdNodeChips { margin-top: 4px; }
     .fdChip { display: inline-block; border: 1px solid #dcdcdc; border-radius: 9px;
-              padding: 0 7px; margin: 2px 3px 0 0; background: #fafafa; }
+              padding: 0 3px 0 7px; margin: 2px 3px 0 0; background: #fafafa; }
+    .fdChip .x { cursor: pointer; color: #b03030; font-weight: bold; margin-left: 5px; padding: 0 2px; }
+    .fdChip .x:hover { text-decoration: underline; }
 
     #fdOverlay { display: none; position: fixed; left: 0; top: 0; right: 0; bottom: 0;
                  background: rgba(0,0,0,0.35); z-index: 1000; }
@@ -66,6 +77,7 @@
 
 <div class="fdPanel">
   <div class="fdPanelHead"><span class="grow">Distribute a file to many devices</span>
+    <button onclick="fdOpenSettings();" title="My Devices button settings">Settings</button>
     <button onclick="fdToggleBig();" id="fdBigBtn" title="Use the whole window">Expand</button></div>
   <div class="fdPanelBody">
 
@@ -77,9 +89,10 @@
       <div class="fdCol">
         <label>Folder on the devices</label>
         <input type="text" id="fdFolder" placeholder="C:\Users\Public\Desktop" oninput="fdPreview();" />
+        <div class="fdRecentWrap" id="fdRecentWrap"></div>
         <label style="margin-top:8px;">Save as (empty keeps the original name)</label>
         <input type="text" id="fdName" oninput="fdPreview();" />
-        <div class="fdMuted" style="margin-top:6px;">Will be written to:</div>
+        <div class="fdMuted" style="margin-top:6px;">Will be written to (existing file with the same name is replaced):</div>
         <div id="fdPrev" class="fdMono">&mdash;</div>
       </div>
     </div>
@@ -103,6 +116,7 @@
     <div class="fdLists">
       <div class="fdListBox" id="fdNodeBox"></div>
       <div class="fdListBox" id="fdMeshBox"></div>
+      <div class="fdListBox" id="fdTagBox"></div>
     </div>
     <div style="margin-top:10px;display:flex;align-items:center;">
       <button onclick="fdDistribute();" id="fdGo">Distribute</button>
@@ -116,7 +130,7 @@
     <button onclick="fdLoadOverview();">Refresh</button></div>
   <div class="fdPanelBody">
     <table class="fdOv"><thead><tr>
-      <th width="34%">File</th><th width="34%">Path on device</th><th width="22%">Devices</th><th width="10%"></th>
+      <th width="30%">File</th><th width="30%">Path on device</th><th width="30%">Devices</th><th width="10%"></th>
     </tr></thead><tbody id="fdOvBody"></tbody></table>
     <div id="fdOvEmpty" class="fdMuted" style="padding:10px 4px;">Nothing is being distributed yet.</div>
   </div>
@@ -135,16 +149,21 @@
 </div>
 </body>
 <script type="text/javascript">
-var fdNodes = [];        // {id, name, meshid, online}
+var fdNodes = [];        // {id, name, meshid, online, tags:[]}
 var fdMeshes = [];       // {id, name}
 var fdSel = {};          // node id -> true
 var fdMeshSel = {};      // mesh id -> true
+var fdTagSel = {};       // tag -> true
 var fdPill = 'all';
 var fdFiles = [];        // {linkpath, nicepath}
 var fdPicked = '';
 var fdOverview = [];
 var fdOnOk = null;
 var fdBig = false;
+var fdCanManageUi = false;
+
+var RECENT_KEY = 'fd_recentFolders';
+var RECENT_MAX = 10;
 
 function fdEsc(s) {
     return String(s == null ? '' : s).replace(/&/g, '&amp;').replace(/</g, '&lt;')
@@ -173,9 +192,6 @@ document.addEventListener('keydown', function (e) {
     if (e.key == 'Escape') fdClose();
 });
 
-// The plugin's own frame cannot resize the host page, so full screen is the only
-// way to get more room without touching the parent's DOM. Where the browser
-// refuses it, fall back to simply making the lists taller.
 function fdToggleBig() {
     var btn = document.getElementById('fdBigBtn');
     if (!fdBig) {
@@ -196,7 +212,7 @@ function fdToggleBig() {
 }
 function fdTallMode(on) {
     var boxes = document.querySelectorAll('.fdListBox');
-    for (var i = 0; i < boxes.length; i++) { boxes[i].style.height = on ? '520px' : '260px'; }
+    for (var i = 0; i < boxes.length; i++) { boxes[i].style.height = on ? '460px' : '260px'; }
 }
 document.addEventListener('fullscreenchange', function () {
     if (!document.fullscreenElement && fdBig) { fdTallMode(false); fdBig = false; document.getElementById('fdBigBtn').textContent = 'Expand'; }
@@ -206,11 +222,25 @@ function fdInit() {
     fdReadNodes();
     fdReadFiles();
     fdRenderMeshes();
+    fdRenderTags();
     fdRenderNodes();
     fdRenderFiles();
+    fdRenderRecent();
+    fdApplyPreselect();
     parent.pluginHandler.filedist.loadOverview = function (msg) { fdOnOverview(msg.event); };
     parent.pluginHandler.filedist.onBulkResult = function (msg) { fdOnBulk(msg.event); };
+    parent.pluginHandler.filedist.onUiConfig = function (msg) { fdOnUiConfig(msg.event); };
     fdLoadOverview();
+    try { parent.meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'getUiConfig' }); } catch (e) { }
+}
+
+// Devices passed in via ?preselect=id1,id2 from the My Devices toolbar button.
+function fdApplyPreselect() {
+    var m = /[?&]preselect=([^&]+)/.exec(window.location.search);
+    if (m == null) return;
+    decodeURIComponent(m[1]).split(',').forEach(function (id) { if (id) fdSel[id] = true; });
+    fdRenderNodes();
+    if (Object.keys(fdSel).length > 0) { fdShow('ok', Object.keys(fdSel).length + ' device(s) carried over from My Devices.'); }
 }
 
 // The host page keeps the device list on window; it is only a convenience here,
@@ -225,7 +255,8 @@ function fdReadNodes() {
         for (var i = 0; i < ns.length; i++) {
             var n = ns[i];
             if (n.mtype != 2) continue;
-            fdNodes.push({ id: n._id, name: n.name || n._id, meshid: n.meshid, online: ((n.conn != null) && (n.conn > 0)) });
+            var tags = Array.isArray(n.tags) ? n.tags.filter(function (t) { return t && String(t).trim() != ''; }) : [];
+            fdNodes.push({ id: n._id, name: n.name || n._id, meshid: n.meshid, online: ((n.conn != null) && (n.conn > 0)), tags: tags });
         }
         fdNodes.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
     } catch (e) { }
@@ -283,6 +314,34 @@ function fdPreview() {
     document.getElementById('fdPrev').textContent = (full == '') ? '\u2014' : full;
 }
 
+// ---- Recent folders (kept in this browser only, via localStorage) ----
+function fdRecentGet() {
+    try { var a = JSON.parse(localStorage.getItem(RECENT_KEY) || '[]'); return Array.isArray(a) ? a : []; }
+    catch (e) { return []; }
+}
+function fdRecentAdd(folder) {
+    folder = String(folder || '').trim();
+    if (folder == '') return;
+    try {
+        var a = fdRecentGet().filter(function (x) { return x != folder; });
+        a.unshift(folder);
+        if (a.length > RECENT_MAX) a = a.slice(0, RECENT_MAX);
+        localStorage.setItem(RECENT_KEY, JSON.stringify(a));
+    } catch (e) { }
+    fdRenderRecent();
+}
+function fdRenderRecent() {
+    var a = fdRecentGet(), box = document.getElementById('fdRecentWrap');
+    if (a.length == 0) { box.innerHTML = ''; return; }
+    var h = '<span class="fdRecentLbl">Recent:</span>';
+    a.forEach(function (p) { h += '<span class="fdRecentChip" onclick="fdUseRecent(this);" data-p="' + fdEsc(p) + '">' + fdEsc(p) + '</span>'; });
+    box.innerHTML = h;
+}
+function fdUseRecent(el) {
+    document.getElementById('fdFolder').value = el.getAttribute('data-p');
+    fdPreview();
+}
+
 function fdRenderMeshes() {
     var h = '<div class="fdListHead">DEVICE GROUPS</div>';
     fdMeshes.forEach(function (m) {
@@ -295,19 +354,54 @@ function fdMeshToggle(cb) {
     if (cb.checked) fdMeshSel[id] = true; else delete fdMeshSel[id];
     fdRenderNodes();
 }
+
+function fdAllTags() {
+    var counts = {};
+    fdNodes.forEach(function (n) { n.tags.forEach(function (t) { counts[t] = (counts[t] || 0) + 1; }); });
+    return Object.keys(counts).sort().map(function (t) { return { tag: t, count: counts[t] }; });
+}
+function fdRenderTags() {
+    var tags = fdAllTags(), box = document.getElementById('fdTagBox');
+    var h = '<div class="fdListHead">TAGS</div>';
+    if (tags.length == 0) { h += '<div class="fdMuted" style="padding:6px;">No device has a tag yet.</div>'; }
+    tags.forEach(function (t) {
+        h += '<label class="fdItem"><input type="checkbox" data-tag="' + fdEsc(t.tag) + '" onchange="fdTagToggle(this);"> ' +
+             fdEsc(t.tag) + ' <span class="fdMuted">(' + t.count + ')</span></label>';
+    });
+    box.innerHTML = h;
+}
+function fdTagToggle(cb) {
+    var t = cb.getAttribute('data-tag');
+    if (cb.checked) fdTagSel[t] = true; else delete fdTagSel[t];
+    fdRenderNodes();
+}
+
 function fdVisibleNodes() {
     var f = document.getElementById('fdNodeFilter').value.trim().toLowerCase();
     var meshFilter = Object.keys(fdMeshSel);
+    var tagFilter = Object.keys(fdTagSel);
     return fdNodes.filter(function (n) {
         if ((fdPill == 'online') && !n.online) return false;
         if ((fdPill == 'offline') && n.online) return false;
         if ((meshFilter.length > 0) && (fdMeshSel[n.meshid] !== true)) return false;
+        if (tagFilter.length > 0) {
+            var has = false;
+            for (var i = 0; i < n.tags.length; i++) { if (fdTagSel[n.tags[i]] === true) { has = true; break; } }
+            if (!has) return false;
+        }
         if ((f.length > 0) && (n.name.toLowerCase().indexOf(f) == -1)) return false;
         return true;
     });
 }
+function fdSetPill(v) {
+    fdPill = v;
+    ['All', 'Online', 'Offline'].forEach(function (n) {
+        document.getElementById('fdPill' + n).classList.toggle('on', n.toLowerCase() == v);
+    });
+    fdRenderNodes();
+}
 function fdRenderNodes() {
-    var vis = fdVisibleNodes(), h = '<div class="fdListHead">DEVICES</div>';
+    var vis = fdVisibleNodes(), h = '<div class="fdListHead">DEVICES (' + vis.length + ')</div>';
     if (vis.length == 0) { h += '<div class="fdMuted" style="padding:6px;">No device matches these filters.</div>'; }
     vis.forEach(function (n) {
         h += '<label class="fdItem"><input type="checkbox" data-node="' + fdEsc(n.id) + '"' +
@@ -345,12 +439,13 @@ function fdDistribute() {
     fdOpen('Distribute file',
         'Send <b>' + fdEsc(fdBaseName(fdPicked)) + '</b> to <b>' + ids.length + '</b> device(s)?' +
         '<div class="fdMono" style="margin-top:8px;">' + fdEsc(cpath) + '</div>' +
-        '<div class="fdMuted" style="margin-top:8px;">Devices you cannot manage are skipped. Offline devices ' +
-        'receive the file when they next connect.</div>',
+        '<div class="fdMuted" style="margin-top:8px;">A file already at that path on a device is replaced. ' +
+        'Devices you cannot manage are skipped. Offline devices receive the file when they next connect.</div>',
         function () {
             document.getElementById('fdGo').disabled = true;
             parent.meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'addFileMapBulk',
                 nodeids: ids, spath: fdPicked, cpath: cpath });
+            fdRecentAdd(folder);
             fdClose();
         }, 'Distribute');
 }
@@ -380,14 +475,16 @@ function fdOnOverview(ev) {
     body.innerHTML = '';
     keys.forEach(function (k, idx) {
         var g = groups[k];
-        var chips = g.nodes.slice(0, 12).map(function (n) { return '<span class="fdChip">' + fdEsc(fdNodeName(n)) + '</span>'; }).join('');
-        if (g.nodes.length > 12) chips += '<span class="fdChip">+' + (g.nodes.length - 12) + ' more</span>';
+        var chips = g.nodes.map(function (n, j) {
+            return '<span class="fdChip">' + fdEsc(fdNodeName(n)) +
+                   '<span class="x" title="Remove just this device" onclick="fdRemoveOne(' + idx + ',' + j + ');">\u00d7</span></span>';
+        }).join('');
         var tr = body.insertRow(-1);
         tr.innerHTML =
             '<td>' + fdEsc(fdFileNice(g.serverpath)) + '</td>' +
             '<td class="fdMono">' + fdEsc(g.clientpath) + '</td>' +
             '<td>' + g.nodes.length + ' device(s)<div class="fdNodeChips">' + chips + '</div></td>' +
-            '<td><button onclick="fdRemoveGroup(' + idx + ');">Remove</button></td>';
+            '<td><button onclick="fdRemoveGroup(' + idx + ');">Remove all</button></td>';
     });
     window.fdGroups = keys.map(function (k) { return groups[k]; });
     document.getElementById('fdOvEmpty').style.display = (keys.length == 0) ? '' : 'none';
@@ -395,16 +492,27 @@ function fdOnOverview(ev) {
 function fdRemoveGroup(idx) {
     var g = window.fdGroups[idx];
     if (g == null) return;
-    fdOpen('Remove distribution',
-        'Stop distributing this file to <b>' + g.nodes.length + '</b> device(s)?' +
-        '<div class="fdMono" style="margin-top:8px;">' + fdEsc(g.clientpath) + '</div>' +
-        '<div style="margin-top:10px;"><label><input type="checkbox" id="fdDelFileBulk"> Also delete the file from those devices</label></div>' +
+    fdConfirmRemove('Remove distribution',
+        'Stop distributing this file to <b>' + g.nodes.length + '</b> device(s)?',
+        g.clientpath, g.ids);
+}
+function fdRemoveOne(idx, j) {
+    var g = window.fdGroups[idx];
+    if ((g == null) || (g.ids[j] == null)) return;
+    fdConfirmRemove('Remove distribution',
+        'Stop distributing this file to <b>' + fdEsc(fdNodeName(g.nodes[j])) + '</b>?',
+        g.clientpath, [g.ids[j]]);
+}
+function fdConfirmRemove(title, question, clientpath, ids) {
+    fdOpen(title,
+        question +
+        '<div class="fdMono" style="margin-top:8px;">' + fdEsc(clientpath) + '</div>' +
+        '<div style="margin-top:10px;"><label><input type="checkbox" id="fdDelFileBulk"> Also delete the file from the device(s)</label></div>' +
         '<div class="fdMuted" style="margin-top:6px;">Only devices that are online right now can delete the file. ' +
         'A file that was replaced or edited on a device is left alone.</div>',
         function () {
             var del = document.getElementById('fdDelFileBulk').checked;
-            parent.meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'deleteMapsBulk',
-                ids: g.ids, deleteFile: del });
+            parent.meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'deleteMapsBulk', ids: ids, deleteFile: del });
             fdClose();
         }, 'Remove');
 }
@@ -423,6 +531,28 @@ function fdOnBulk(ev) {
         fdShow('ok', t2);
     }
     fdLoadOverview();
+}
+
+// ---- My Devices button settings ----
+function fdOnUiConfig(ev) {
+    fdCanManageUi = (ev && (ev.canManageUi === true));
+    window.fdUiConfig = (ev && ev.config) ? ev.config : { devicesButton: false };
+}
+function fdOpenSettings() {
+    var cfg = window.fdUiConfig || { devicesButton: false };
+    var body =
+        '<label><input type="checkbox" id="fdDevBtnChk"' + (cfg.devicesButton ? ' checked' : '') +
+        (fdCanManageUi ? '' : ' disabled') + '> Show a "Distribute File" button on the My Devices toolbar</label>' +
+        '<div class="fdMuted" style="margin-top:8px;">Opens this page in a new tab with the devices selected on ' +
+        'My Devices carried over. The button appears next to the existing Group Action button; it needs My Devices ' +
+        'to be the first page you land on after a login or refresh, same as the equivalent button in Quick Commands.</div>' +
+        (fdCanManageUi ? '' : '<div class="fdMuted" style="margin-top:8px;">Changing this needs full site administrator rights.</div>');
+    fdOpen('My Devices button', body, fdCanManageUi ? function () {
+        var on = document.getElementById('fdDevBtnChk').checked;
+        parent.meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'saveUiConfig', config: { devicesButton: on } });
+        fdShow('ok', 'Saved. Reload My Devices to see the change.');
+        fdClose();
+    } : null, 'Save');
 }
 </script>
 </html>
