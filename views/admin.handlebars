@@ -12,7 +12,11 @@
     .fdPanelHead button { margin-left: 6px; }
     /* Each panel gets its own resize handle so the three blocks can be sized
        independently; a drag handle appears at the bottom-right corner. */
-    .fdPanelBody { padding: 10px; resize: vertical; overflow: auto; min-height: 150px; }
+    .fdPanelBody { padding: 10px; resize: vertical; overflow: hidden; min-height: 40px;
+                   display: flex; flex-direction: column; }
+    /* Children stretch with the panel instead of carrying their own handles. */
+    .fdGrow { flex: 1; min-height: 0; display: flex; }
+    .fdFixed { flex: 0 0 auto; }
     .fdRow { display: flex; gap: 10px; flex-wrap: wrap; align-items: flex-end; margin-bottom: 8px; }
     .fdCol { flex: 1; min-width: 180px; }
     .fdCol label { display: block; color: #555; margin-bottom: 3px; }
@@ -26,7 +30,7 @@
     .fdPill .cnt { opacity: 0.75; margin-left: 5px; }
 
     .fdLists { display: flex; gap: 10px; align-items: stretch; }
-    .fdListBox { border: 1px solid #d8d8d8; overflow: auto; height: 260px; padding: 4px; resize: vertical; min-height: 120px; }
+    .fdListBox { border: 1px solid #d8d8d8; overflow: auto; padding: 4px; min-height: 0; }
     #fdNodeBox { flex: 2; }
     #fdMeshBox, #fdTagBox { flex: 1; }
     .fdListHead { font-weight: bold; color: #555; padding: 2px 4px 5px 4px; }
@@ -36,7 +40,7 @@
     .fdOn { background: #3c9a3c; } .fdOff { background: #b03030; }
     .fdCount { color: #555; margin-left: 8px; }
 
-    #fdFileBox { border: 1px solid #d8d8d8; height: 130px; overflow: auto; resize: vertical; min-height: 80px; }
+    #fdFileBox { border: 1px solid #d8d8d8; overflow: auto; min-height: 0; flex: 1; }
     .fdFile { padding: 3px 5px; cursor: pointer; }
     .fdFile:hover { background: #eef4fb; }
     .fdFile.sel { background: #dceaf7; font-weight: bold; }
@@ -81,9 +85,9 @@
     <button onclick="fdToggleBig();" id="fdBigBtn" title="Use the whole window">Expand</button></div>
   <div class="fdPanelBody">
 
-    <div class="fdRow">
-      <div class="fdCol" style="flex:2;">
-        <label>File from My Files</label>
+    <div class="fdRow fdGrow">
+      <div class="fdCol" style="flex:2;display:flex;flex-direction:column;">
+        <label class="fdFixed">File from My Files</label>
         <div id="fdFileBox"></div>
       </div>
       <div class="fdCol">
@@ -113,7 +117,7 @@
         <button onclick="fdClearAll();">Clear all</button>
       </div>
     </div>
-    <div class="fdLists">
+    <div class="fdLists fdGrow">
       <div class="fdListBox" id="fdNodeBox"></div>
       <div class="fdListBox" id="fdMeshBox"></div>
       <div class="fdListBox" id="fdTagBox"></div>
@@ -129,9 +133,9 @@
   <div class="fdPanelHead"><span class="grow">Current distributions</span>
     <button onclick="fdLoadOverview();">Refresh</button></div>
   <div class="fdPanelBody">
-    <table class="fdOv"><thead><tr>
+    <div class="fdGrow" style="overflow:auto;display:block;"><table class="fdOv"><thead><tr>
       <th width="30%">File</th><th width="30%">Path on device</th><th width="30%">Devices</th><th width="10%"></th>
-    </tr></thead><tbody id="fdOvBody"></tbody></table>
+    </tr></thead><tbody id="fdOvBody"></tbody></table></div>
     <div id="fdOvEmpty" class="fdMuted" style="padding:10px 4px;">Nothing is being distributed yet.</div>
   </div>
 </div>
@@ -210,9 +214,41 @@ function fdToggleBig() {
         fdTallMode(false); fdBig = false; btn.textContent = 'Expand';
     }
 }
+// Panel heights are remembered per browser. Each panel body carries the resize
+// handle now, and its children stretch to follow.
+var FD_DEF_H = [230, 300, 220];
+function fdPanels() { return document.querySelectorAll('.fdPanelBody'); }
+function fdLoadHeights() {
+    var saved = {};
+    try { saved = JSON.parse(localStorage.getItem('fd_panel_heights') || '{}'); } catch (e) { saved = {}; }
+    var ps = fdPanels();
+    for (var i = 0; i < ps.length; i++) {
+        var h = saved[i];
+        ps[i].style.height = ((typeof h == 'number') && (h > 30) ? h : FD_DEF_H[i] || 240) + 'px';
+    }
+}
+function fdSaveHeights() {
+    var ps = fdPanels(), out = {};
+    for (var i = 0; i < ps.length; i++) { out[i] = ps[i].offsetHeight; }
+    try { localStorage.setItem('fd_panel_heights', JSON.stringify(out)); } catch (e) { }
+}
+function fdWatchHeights() {
+    if (typeof ResizeObserver != 'function') return;
+    var t = null;
+    var ro = new ResizeObserver(function () {
+        if (t) clearTimeout(t);
+        t = setTimeout(fdSaveHeights, 400);
+    });
+    var ps = fdPanels();
+    for (var i = 0; i < ps.length; i++) { ro.observe(ps[i]); }
+}
 function fdTallMode(on) {
-    var boxes = document.querySelectorAll('.fdListBox');
-    for (var i = 0; i < boxes.length; i++) { boxes[i].style.height = on ? '460px' : '260px'; }
+    var ps = fdPanels();
+    for (var i = 0; i < ps.length; i++) {
+        ps[i].style.height = on ? Math.max(320, Math.round((window.innerHeight - 180) / ps.length)) + 'px'
+                                : ((FD_DEF_H[i] || 240) + 'px');
+    }
+    if (!on) { fdLoadHeights(); }
 }
 document.addEventListener('fullscreenchange', function () {
     if (!document.fullscreenElement && fdBig) { fdTallMode(false); fdBig = false; document.getElementById('fdBigBtn').textContent = 'Expand'; }
@@ -227,6 +263,8 @@ function fdInit() {
     fdRenderFiles();
     fdRenderRecent();
     fdApplyPreselect();
+    fdLoadHeights();
+    fdWatchHeights();
     parent.pluginHandler.filedist.loadOverview = function (msg) { fdOnOverview(msg.event); };
     parent.pluginHandler.filedist.onBulkResult = function (msg) { fdOnBulk(msg.event); };
     parent.pluginHandler.filedist.onUiConfig = function (msg) { fdOnUiConfig(msg.event); };
