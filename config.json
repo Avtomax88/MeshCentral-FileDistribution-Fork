@@ -1,7 +1,7 @@
 {
   "name": "File Distribution",
   "shortName": "filedist",
-  "version": "0.1.0",
+  "version": "0.2.1",
   "author": "Ryan Blenis; fork maintained by Avtomax88",
   "description": "Distribute files from the \"My Files\" tab to your endpoints. Personal fork with modern-theme dialogs and rights checks on every action.",
   "hasAdminPanel": false,
