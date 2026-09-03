@@ -3,7 +3,7 @@
 Форк [meshcentral-community/MeshCentral-FileDistribution](https://github.com/meshcentral-community/MeshCentral-FileDistribution),
 созданный для личного использования.
 
-Формат основан на [Keep a Changelog](https://keepachangelog.com/en/1.0.0/).
+
 
 ## [0.4.1]
 
