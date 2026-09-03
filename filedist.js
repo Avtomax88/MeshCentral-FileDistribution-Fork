@@ -28,7 +28,9 @@ module.exports.filedist = function (parent) {
       'mapData',
       'overviewData',
       'bulkResult',
-      'uiConfig'
+      'uiConfig',
+      'tryButton',
+      'goPageStart'
     ];
     var PLUGIN_L = 'filedist';
     var PLUGIN_C = 'FileDist';
@@ -138,13 +140,14 @@ module.exports.filedist = function (parent) {
     // placed. Only reaches agents that are online: an offline device keeps the
     // file, and its stale map is dropped on next connect because setMaps now
     // replaces the whole set.
-    obj.sendRemoveMap = function(comp, clientpath, deleteFile) {
+    obj.sendRemoveMap = function(comp, clientpath, deleteFile, filesize) {
         const command = {
             action: 'plugin',
             plugin: PLUGIN_L,
             pluginaction: 'removeMap',
             clientpath: clientpath,
-            deleteFile: (deleteFile === true)
+            deleteFile: (deleteFile === true),
+            filesize: ((typeof filesize == 'number') ? filesize : null)
         };
         try {
             obj.debug('PLUGIN', PLUGIN_C, 'Sending map removal to ' + comp + (deleteFile === true ? ' (with file delete)' : ''));
@@ -242,12 +245,26 @@ module.exports.filedist = function (parent) {
                 pluginHandler.filedist.onUiConfig({ event: { config: cfg, canManageUi: (m ? m.canManageUi : false) } });
             }
         } catch (e) { }
+        pluginHandler.filedist._uiCfg = cfg;
         if (cfg.devicesButton !== true) return;
-        if ((pluginHandler.filedist._btnDone === true)) return;
-        pluginHandler.filedist._btnDone = true;
+        pluginHandler.filedist.tryButton(0);
+    };
+
+    // My Devices may not be on screen yet when the setting arrives, and the user
+    // can navigate to it later, so insertion is retried and also re-run on page
+    // changes. Nothing here is required for the rest of the plugin to work.
+    obj.tryButton = function (attempt) {
+        if (pluginHandler.filedist._btnDone === true) return;
+        var cfg = pluginHandler.filedist._uiCfg;
+        if ((cfg == null) || (cfg.devicesButton !== true)) return;
         try {
             var ga = document.getElementById('GroupActionButton');
-            if (ga == null) return; // this theme/version does not expose the toolbar we attach to
+            if (ga == null) {
+                if (attempt < 20) { setTimeout(function () { pluginHandler.filedist.tryButton(attempt + 1); }, 500); }
+                return;
+            }
+            if (document.getElementById('fdDevicesBtn') != null) { pluginHandler.filedist._btnDone = true; return; }
+            pluginHandler.filedist._btnDone = true;
             var b = document.createElement('button');
             b.id = 'fdDevicesBtn'; b.type = 'button';
             b.className = (typeof showModal === 'function') ? (ga.className + ' fdDevBtnBs').replace('btn-primary', 'btn-secondary') : 'fdDevBtn';
@@ -266,6 +283,10 @@ module.exports.filedist = function (parent) {
             ga.parentNode.insertBefore(b, ga.nextSibling);
             new MutationObserver(function () { b.disabled = ga.disabled; }).observe(ga, { attributes: true, attributeFilter: ['disabled'] });
         } catch (e) { }
+    };
+
+    obj.goPageStart = function () {
+        try { pluginHandler.filedist.tryButton(0); } catch (e) { }
     };
 
     obj.mapData = function (message) {
@@ -456,7 +477,7 @@ module.exports.filedist = function (parent) {
                     .then(function () {
                         removed++;
                         touched[map.node] = true;
-                        obj.sendRemoveMap(map.node, map.clientpath, (deleteFile === true));
+                        obj.sendRemoveMap(map.node, map.clientpath, (deleteFile === true), map.filesize);
                         next();
                     })
                     .catch(function () { skipped++; next(); });
@@ -528,7 +549,7 @@ module.exports.filedist = function (parent) {
                         if (!ok) { obj.debug('PLUGIN', PLUGIN_C, 'Refused deleteMap: no rights on ' + map.node); return; }
                         obj.db.delete(command.id)
                         .then(() => {
-                            obj.sendRemoveMap(map.node, map.clientpath, (command.deleteFile === true));
+                            obj.sendRemoveMap(map.node, map.clientpath, (command.deleteFile === true), map.filesize);
                             obj.updateFrontEnd({ maps: true, nodeId: map.node });
                         })
                         .catch(e => console.log('PLUGIN: FileDistribution: Unable to delete map'))
@@ -570,6 +591,15 @@ module.exports.filedist = function (parent) {
                 obj.bulkDeleteMaps(user, command.ids, (command.deleteFile === true), function (res) {
                     obj.replyToUser(user, 'bulkResult', { kind: 'delete', result: res });
                 });
+                break;
+            }
+            case 'removeResult': {
+                // Sent by an agent after a delete attempt. Logged rather than
+                // silently dropped, so a refusal can be traced without turning on
+                // debugging inside the agent itself.
+                if (myparent.dbNodeKey == null) return;
+                obj.debug('PLUGIN', PLUGIN_C, 'Delete on ' + myparent.dbNodeKey + ' for ' + command.clientpath +
+                          ': ' + ((command.ok === true) ? 'done' : 'refused') + ' (' + command.detail + ')');
                 break;
             }
             case 'getUiConfig': {
