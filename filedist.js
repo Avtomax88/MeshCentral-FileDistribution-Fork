@@ -113,6 +113,26 @@ module.exports.filedist = function (parent) {
         return (typeof path == 'string') && (path.trim().length > 0) && (path.length <= 1024) && (path.indexOf('\0') == -1);
     };
 
+    // Tells the agent to forget a map, and optionally to delete the file it
+    // placed. Only reaches agents that are online: an offline device keeps the
+    // file, and its stale map is dropped on next connect because setMaps now
+    // replaces the whole set.
+    obj.sendRemoveMap = function(comp, clientpath, deleteFile) {
+        const command = {
+            action: 'plugin',
+            plugin: PLUGIN_L,
+            pluginaction: 'removeMap',
+            clientpath: clientpath,
+            deleteFile: (deleteFile === true)
+        };
+        try {
+            obj.debug('PLUGIN', PLUGIN_C, 'Sending map removal to ' + comp + (deleteFile === true ? ' (with file delete)' : ''));
+            obj.meshServer.webserver.wsagents[comp].send(JSON.stringify(command));
+        } catch (e) {
+            obj.debug('PLUGIN', PLUGIN_C, 'Could not send map removal to ' + comp + ' (agent likely offline)');
+        }
+    };
+
     obj.hook_agentCoreIsStable = function(myparent, gp) { // check for remaps when an agent logs in
         obj.db.getFileMapsForNode(myparent.dbNodeKey)
         .then((maps) => {
@@ -316,7 +336,10 @@ module.exports.filedist = function (parent) {
                     obj.userCanManageNode(user, map.node, function (ok) {
                         if (!ok) { obj.debug('PLUGIN', PLUGIN_C, 'Refused deleteMap: no rights on ' + map.node); return; }
                         obj.db.delete(command.id)
-                        .then(() => { obj.updateFrontEnd({ maps: true, nodeId: map.node }); })
+                        .then(() => {
+                            obj.sendRemoveMap(map.node, map.clientpath, (command.deleteFile === true));
+                            obj.updateFrontEnd({ maps: true, nodeId: map.node });
+                        })
                         .catch(e => console.log('PLUGIN: FileDistribution: Unable to delete map'))
                     });
                 })
