@@ -219,14 +219,8 @@ module.exports.filedist = function (parent) {
 
     obj.handleAdminReq = function(req, res, user) {
         if ((user == null) || (user.siteadmin == null)) { res.sendStatus(401); return; }
-        var isAdmin = (user.siteadmin == FULLRIGHTS);
 
-        if (req.query.admin == 1) {
-            // Not gated on site admin: the page lists only devices this user may
-            // manage, and every action re-checks rights on the server anyway.
-            res.render(obj.VIEWS + 'admin', {});
-            return;
-        } else if (req.query.user == 1) {
+        if (req.query.user == 1) {
             // The device page asks for its own file maps. Only hand them over if
             // this user is allowed to manage that device.
             obj.userCanManageNode(user, req.query.node, function (ok) {
@@ -238,7 +232,9 @@ module.exports.filedist = function (parent) {
                 .catch(() => { res.sendStatus(500); });
             });
             return;
-        } else if (req.query.include == 1) {
+        }
+
+        if (req.query.include == 1) {
             switch (req.query.path.split('/').pop().split('.').pop()) {
                 case 'css':     res.contentType('text/css'); break;
                 case 'js':      res.contentType('text/javascript'); break;
@@ -246,8 +242,13 @@ module.exports.filedist = function (parent) {
             res.sendFile(__dirname + '/includes/' + req.query.path); // don't freak out. Express covers any path issues.
             return;
         }
-        res.sendStatus(401);
-        return;
+
+        // Anything else is the management page. MeshCentral opens it from
+        // My Server > Plugins without adding a query of its own, so this has to be
+        // the default rather than something gated on a parameter. It is not
+        // restricted to site admins: the page lists only devices this user may
+        // manage, and every action re-checks rights on the server.
+        res.render(obj.VIEWS + 'admin', {});
     };
 
     obj.getServerFilePath = function (path) {
