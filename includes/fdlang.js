@@ -64,6 +64,7 @@ var FD_STR = {
         deleteWord: 'Delete',
         distributeTitle: 'Distribute file',
         distributeAsk: 'Send <b>{0}</b> to <b>{1}</b> device(s)?',
+        replaceNote: 'A file already at that path on a device is replaced.',
         distributeNote: 'Devices you cannot manage are skipped. Offline devices receive the file when they next connect.',
         removeTitle: 'Remove distribution',
         removeAsk: 'Stop distributing this file to <b>{0}</b> device(s)?',
@@ -72,6 +73,9 @@ var FD_STR = {
         alsoDeleteMany: 'Also delete the file from those devices',
         deleteNote: 'Only devices that are online right now can delete the file. A file that was replaced or edited on a device is left alone.',
         keepNote: 'Leave this unticked to keep the file where it is and only stop keeping it up to date.',
+        carriedOver: '{0} device(s) carried over from My Devices.',
+        removeOneAskName: 'Stop distributing this file to <b>{0}</b>?',
+        stopOnThisDevice: 'Stop distributing this file to the device?',
 
         // device tab
         serverPath: 'Server Path',
@@ -161,6 +165,7 @@ var FD_STR = {
         deleteWord: 'Удалить',
         distributeTitle: 'Раздача файла',
         distributeAsk: 'Отправить <b>{0}</b> на устройства (<b>{1}</b>)?',
+        replaceNote: 'Файл, уже лежащий по этому пути на устройстве, будет заменён.',
         distributeNote: 'Устройства, которыми вы не управляете, будут пропущены. Те, что не в сети, получат файл при следующем подключении.',
         removeTitle: 'Снятие раздачи',
         removeAsk: 'Прекратить раздачу этого файла на устройства (<b>{0}</b>)?',
@@ -169,6 +174,9 @@ var FD_STR = {
         alsoDeleteMany: 'Также удалить файл с этих устройств',
         deleteNote: 'Удалить файл могут только устройства, которые сейчас в сети. Файл, заменённый или изменённый на устройстве, останется нетронутым.',
         keepNote: 'Без галочки файл останется на месте и просто перестанет обновляться.',
+        carriedOver: 'Перенесено из «Мои устройства»: {0}.',
+        removeOneAskName: 'Прекратить раздачу этого файла на <b>{0}</b>?',
+        stopOnThisDevice: 'Прекратить раздачу этого файла на это устройство?',
 
         serverPath: 'Путь на сервере',
         clientPath: 'Путь на устройстве',
