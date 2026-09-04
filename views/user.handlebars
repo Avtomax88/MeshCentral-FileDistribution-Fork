@@ -240,11 +240,10 @@ function goAddEx2(spath) {
 }
 function deleteMap(el) {
     var mid = el.parentNode.parentNode.getAttribute('x-data-id');
-    fdOpen('Delete File Map?',
-        '<div style="margin-bottom:10px;">Stop distributing this file to the device?</div>' +
-        '<label><input type="checkbox" id="fdDelFile" /> Also delete the file from the device</label>' +
-        '<div style="color:#666;margin-top:8px;">Leave this unticked to keep the file where it is and only stop ' +
-        'keeping it up to date. The device must be online for the file to be removed.</div>',
+    fdOpen(T('removeTitle'),
+        '<div style="margin-bottom:10px;">' + T('stopOnThisDevice') + '</div>' +
+        '<label><input type="checkbox" id="fdDelFile" /> ' + T('alsoDelete') + '</label>' +
+        '<div style="color:#666;margin-top:8px;">' + T('keepNote') + ' ' + T('deleteNote') + '</div>',
         function () {
             var del = document.getElementById('fdDelFile').checked;
             parent.meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'deleteMap',
