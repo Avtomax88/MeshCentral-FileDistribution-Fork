@@ -328,7 +328,7 @@ function fdApplyPreselect() {
     if (m == null) return;
     decodeURIComponent(m[1]).split(',').forEach(function (id) { if (id) fdSel[id] = true; });
     fdRenderNodes();
-    if (Object.keys(fdSel).length > 0) { fdShow('ok', Object.keys(fdSel).length + ' device(s) carried over from My Devices.'); }
+    if (Object.keys(fdSel).length > 0) { fdShow('ok', T('carriedOver', Object.keys(fdSel).length)); }
 }
 
 // The host page keeps the device list on window; it is only a convenience here,
@@ -525,10 +525,9 @@ function fdDistribute() {
     if (ids.length == 0) { fdShow('err', T('selectDevice')); return; }
     var cpath = fdJoin(folder, name);
     fdOpen(T('distributeTitle'),
-        'Send <b>' + fdEsc(fdBaseName(fdPicked)) + '</b> to <b>' + ids.length + '</b> device(s)?' +
+        T('distributeAsk', fdEsc(fdBaseName(fdPicked)), ids.length) +
         '<div class="fdMono" style="margin-top:8px;">' + fdEsc(cpath) + '</div>' +
-        '<div class="fdMuted" style="margin-top:8px;">A file already at that path on a device is replaced. ' +
-        'Devices you cannot manage are skipped. Offline devices receive the file when they next connect.</div>',
+        '<div class="fdMuted" style="margin-top:8px;">' + T('replaceNote') + ' ' + T('distributeNote') + '</div>',
         function () {
             document.getElementById('fdGo').disabled = true;
             fdHost().meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'addFileMapBulk',
@@ -581,23 +580,22 @@ function fdRemoveGroup(idx) {
     var g = window.fdGroups[idx];
     if (g == null) return;
     fdConfirmRemove(T('removeTitle'),
-        'Stop distributing this file to <b>' + g.nodes.length + '</b> device(s)?',
+        T('removeAsk', g.nodes.length),
         g.clientpath, g.ids);
 }
 function fdRemoveOne(idx, j) {
     var g = window.fdGroups[idx];
     if ((g == null) || (g.ids[j] == null)) return;
     fdConfirmRemove(T('removeTitle'),
-        'Stop distributing this file to <b>' + fdEsc(fdNodeName(g.nodes[j])) + '</b>?',
+        T('removeOneAskName', fdEsc(fdNodeName(g.nodes[j]))),
         g.clientpath, [g.ids[j]]);
 }
 function fdConfirmRemove(title, question, clientpath, ids) {
     fdOpen(title,
         question +
         '<div class="fdMono" style="margin-top:8px;">' + fdEsc(clientpath) + '</div>' +
-        '<div style="margin-top:10px;"><label><input type="checkbox" id="fdDelFileBulk"> Also delete the file from the device(s)</label></div>' +
-        '<div class="fdMuted" style="margin-top:6px;">Only devices that are online right now can delete the file. ' +
-        'A file that was replaced or edited on a device is left alone.</div>',
+        '<div style="margin-top:10px;"><label><input type="checkbox" id="fdDelFileBulk"> ' + T('alsoDeleteMany') + '</label></div>' +
+        '<div class="fdMuted" style="margin-top:6px;">' + T('deleteNote') + '</div>',
         function () {
             var del = document.getElementById('fdDelFileBulk').checked;
             fdHost().meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'deleteMapsBulk', ids: ids, deleteFile: del });
