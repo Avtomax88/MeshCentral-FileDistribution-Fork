@@ -1,7 +1,7 @@
 {
   "name": "File Distribution",
   "shortName": "filedist",
-  "version": "0.7.3",
+  "version": "0.7.4",
   "author": "Ryan Blenis; fork maintained by Avtomax88",
   "description": "Позволяет распространять файлы из раздела «Мои файлы» на подключённые компьютеры. Это персональная версия плагина с современным оформлением диалоговых окон и проверкой прав доступа для каждого действия.",
   "hasAdminPanel": true,
