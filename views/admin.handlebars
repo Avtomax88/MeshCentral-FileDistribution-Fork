@@ -1,6 +1,7 @@
 <html>
 <head>
     <script type="text/javascript" src="scripts/common-0.0.1.js"></script>
+    <script type="text/javascript" src="pluginadmin.ashx?pin=filedist&include=1&path=fdlang.js"></script>
 </head>
 <style>
     body { font-family: "Trebuchet MS", Arial, Helvetica, sans-serif; font-size: 13px; margin: 0; padding: 6px; }
@@ -84,21 +85,21 @@
 <div id="fdMsg"></div>
 
 <div class="fdPanel">
-  <div class="fdPanelHead"><span class="grow">Distribute a file to many devices</span>
-    <button onclick="fdOpenSettings();" title="My Devices button settings">Settings</button>
-    <button onclick="fdToggleBig();" id="fdBigBtn" title="Use the whole window">Expand</button></div>
+  <div class="fdPanelHead"><span class="grow" data-i18n="distributePanel">Distribute a file to many devices</span>
+    <button onclick="fdOpenSettings();" title="My Devices button settings"data-i18n="settings">Settings</button>
+    <button onclick="fdToggleBig();" id="fdBigBtn" title="Use the whole window" data-i18n-title="expandTitle"data-i18n="expand">Expand</button></div>
   <div class="fdPanelBody">
 
     <div class="fdRow fdGrow">
       <div class="fdCol" style="flex:2;display:flex;flex-direction:column;">
-        <label class="fdFixed">File from My Files</label>
+        <label class="fdFixed" data-i18n="fileFromMyFiles">File from My Files</label>
         <div id="fdFileBox"></div>
       </div>
       <div class="fdCol">
-        <label>Folder on the devices</label>
-        <input type="text" id="fdFolder" placeholder="C:\Users\Public\Desktop" oninput="fdPreview();" />
+        <label data-i18n="folderOnDevices">Folder on the devices</label>
+        <input type="text" id="fdFolder" placeholder="C:\Users\Public\Desktop" data-i18n-ph="folderPlaceholder" oninput="fdPreview();" />
         <div class="fdRecentWrap" id="fdRecentWrap"></div>
-        <label style="margin-top:8px;">Save as (empty keeps the original name)</label>
+        <label style="margin-top:8px;" data-i18n="saveAs">Save as (empty keeps the original name)</label>
         <input type="text" id="fdName" oninput="fdPreview();" />
         <div class="fdMuted" style="margin-top:6px;">Will be written to (existing file with the same name is replaced):</div>
         <div id="fdPrev" class="fdMono">&mdash;</div>
@@ -109,21 +110,21 @@
 </div>
 
 <div class="fdPanel">
-  <div class="fdPanelHead"><span class="grow">Devices</span></div>
+  <div class="fdPanelHead"><span class="grow" data-i18n="devicesPanel">Devices</span></div>
   <div class="fdPanelBody">
     <div class="fdPills">
-      <span class="fdPill on" id="fdPillAll" onclick="fdSetPill('all');">All<span class="cnt" id="fdCntAll">0</span></span>
-      <span class="fdPill" id="fdPillOnline" onclick="fdSetPill('online');">Online<span class="cnt" id="fdCntOnline">0</span></span>
-      <span class="fdPill" id="fdPillOffline" onclick="fdSetPill('offline');">Offline<span class="cnt" id="fdCntOffline">0</span></span>
+      <span class="fdPill on" id="fdPillAll" onclick="fdSetPill('all');"><span data-i18n="all">All</span><span class="cnt" id="fdCntAll">0</span></span>
+      <span class="fdPill" id="fdPillOnline" onclick="fdSetPill('online');"><span data-i18n="online">Online</span><span class="cnt" id="fdCntOnline">0</span></span>
+      <span class="fdPill" id="fdPillOffline" onclick="fdSetPill('offline');"><span data-i18n="offline">Offline</span><span class="cnt" id="fdCntOffline">0</span></span>
     </div>
     <div class="fdRow">
       <div class="fdCol" style="flex:3;">
-        <input type="text" id="fdNodeFilter" placeholder="Filter devices by name" oninput="fdRenderNodes();" />
+        <input type="text" id="fdNodeFilter" placeholder="Filter devices by name" data-i18n-ph="filterDevices" oninput="fdRenderNodes();" />
       </div>
       <div class="fdCol" style="flex:0 0 auto;">
-        <button onclick="fdSelectVisible(true);">Select shown</button>
-        <button onclick="fdSelectVisible(false);">Clear shown</button>
-        <button onclick="fdClearAll();">Clear all</button>
+        <button onclick="fdSelectVisible(true);"data-i18n="selectShown">Select shown</button>
+        <button onclick="fdSelectVisible(false);"data-i18n="clearShown">Clear shown</button>
+        <button onclick="fdClearAll();"data-i18n="clearAll">Clear all</button>
       </div>
     </div>
     <div class="fdLists fdGrow">
@@ -132,15 +133,15 @@
       <div class="fdListBox" id="fdTagBox"></div>
     </div>
     <div style="margin-top:10px;display:flex;align-items:center;">
-      <button onclick="fdDistribute();" id="fdGo">Distribute</button>
+      <button onclick="fdDistribute();" id="fdGo"data-i18n="distribute">Distribute</button>
       <span class="fdCount" id="fdSelCount">0 of 0 selected</span>
     </div>
   </div>
 </div>
 
 <div class="fdPanel">
-  <div class="fdPanelHead"><span class="grow">Current distributions</span>
-    <button onclick="fdLoadOverview();">Refresh</button></div>
+  <div class="fdPanelHead"><span class="grow" data-i18n="currentPanel">Current distributions</span>
+    <button onclick="fdLoadOverview();"data-i18n="refresh">Refresh</button></div>
   <div class="fdPanelBody">
     <div class="fdGrow" style="overflow:auto;display:block;"><table class="fdOv"><thead><tr>
       <th width="30%">File</th><th width="30%">Path on device</th><th width="30%">Devices</th><th width="10%"></th>
@@ -155,7 +156,7 @@
     <div id="fdDlgBody"></div>
     <div id="fdErr"></div>
     <div id="fdDlgFoot">
-      <button onclick="fdClose();">Cancel</button>
+      <button onclick="fdClose();" data-i18n="cancel">Cancel</button>
       <button id="fdOk" onclick="fdConfirm();">OK</button>
     </div>
   </div>
@@ -188,6 +189,26 @@ function fdHost() {
 }
 function fdHostOk() {
     try { return (fdHost().meshserver != null); } catch (e) { return false; }
+}
+
+var T = null;
+function fdInitLang() {
+    var hostLang = null;
+    try { var h = fdHost(); hostLang = h.currentUserLanguage || (h.navigator ? h.navigator.language : null); } catch (e) { }
+    var lang = 'en';
+    try { lang = fdPickLang(hostLang); } catch (e) { }
+    try { T = fdMakeT(lang); } catch (e) { T = function (k) { return k; }; }
+    window.fdCurLang = lang;
+}
+function fdApplyLang() {
+    if (T == null) return;
+    var i, els;
+    els = document.querySelectorAll('[data-i18n]');
+    for (i = 0; i < els.length; i++) { els[i].textContent = T(els[i].getAttribute('data-i18n')); }
+    els = document.querySelectorAll('[data-i18n-ph]');
+    for (i = 0; i < els.length; i++) { els[i].placeholder = T(els[i].getAttribute('data-i18n-ph')); }
+    els = document.querySelectorAll('[data-i18n-title]');
+    for (i = 0; i < els.length; i++) { els[i].title = T(els[i].getAttribute('data-i18n-title')); }
 }
 
 function fdEsc(s) {
@@ -226,13 +247,13 @@ function fdToggleBig() {
             try {
                 var p = req.call(el);
                 if (p && p.catch) { p.catch(function () { fdTallMode(true); }); }
-                fdBig = true; btn.textContent = 'Collapse'; return;
+                fdBig = true; btn.textContent = T('collapse'); return;
             } catch (e) { }
         }
-        fdTallMode(true); fdBig = true; btn.textContent = 'Collapse';
+        fdTallMode(true); fdBig = true; btn.textContent = T('collapse');
     } else {
         if (document.fullscreenElement && document.exitFullscreen) { try { document.exitFullscreen(); } catch (e) { } }
-        fdTallMode(false); fdBig = false; btn.textContent = 'Expand';
+        fdTallMode(false); fdBig = false; btn.textContent = T('expand');
     }
 }
 // Panel heights are remembered per browser. Each panel body carries the resize
@@ -272,15 +293,16 @@ function fdTallMode(on) {
     if (!on) { fdLoadHeights(); }
 }
 document.addEventListener('fullscreenchange', function () {
-    if (!document.fullscreenElement && fdBig) { fdTallMode(false); fdBig = false; document.getElementById('fdBigBtn').textContent = 'Expand'; }
+    if (!document.fullscreenElement && fdBig) { fdTallMode(false); fdBig = false; document.getElementById('fdBigBtn').textContent = T('expand'); }
 });
 
 function fdInit() {
+    fdInitLang();
+    fdApplyLang();
     if (!fdHostOk()) {
         document.body.innerHTML = '<div style="padding:20px;font-family:Arial;">' +
-          'This page needs the MeshCentral window it was opened from. That window was closed, ' +
-          'or this tab was reloaded on its own.<br><br>Open it again from My Devices, or use ' +
-          'My Server &gt; Plugins &gt; File Distribution.</div>';
+          (T ? T('hostGone') : 'This page needs the MeshCentral window it was opened from.') + '<br><br>' +
+          (T ? T('hostGoneHint') : '') + '</div>';
         return;
     }
     fdReadNodes();
@@ -409,7 +431,7 @@ function fdUseRecent(el) {
 }
 
 function fdRenderMeshes() {
-    var h = '<div class="fdListHead">DEVICE GROUPS</div>';
+    var h = '<div class="fdListHead">' + T('groupsHead') + '</div>';
     fdMeshes.forEach(function (m) {
         h += '<label class="fdItem"><input type="checkbox" data-mesh="' + fdEsc(m.id) + '" onchange="fdMeshToggle(this);"> ' + fdEsc(m.name) + '</label>';
     });
@@ -428,7 +450,7 @@ function fdAllTags() {
 }
 function fdRenderTags() {
     var tags = fdAllTags(), box = document.getElementById('fdTagBox');
-    var h = '<div class="fdListHead">TAGS</div>';
+    var h = '<div class="fdListHead">' + T('tagsHead') + '</div>';
     if (tags.length == 0) { h += '<div class="fdMuted" style="padding:6px;">No device has a tag yet.</div>'; }
     tags.forEach(function (t) {
         h += '<label class="fdItem"><input type="checkbox" data-tag="' + fdEsc(t.tag) + '" onchange="fdTagToggle(this);"> ' +
@@ -467,7 +489,7 @@ function fdSetPill(v) {
     fdRenderNodes();
 }
 function fdRenderNodes() {
-    var vis = fdVisibleNodes(), h = '<div class="fdListHead">DEVICES (' + vis.length + ')</div>';
+    var vis = fdVisibleNodes(), h = '<div class="fdListHead">' + T('devicesHead') + ' (' + vis.length + ')</div>';
     if (vis.length == 0) { h += '<div class="fdMuted" style="padding:6px;">No device matches these filters.</div>'; }
     vis.forEach(function (n) {
         h += '<label class="fdItem"><input type="checkbox" data-node="' + fdEsc(n.id) + '"' +
@@ -489,20 +511,20 @@ function fdSelectVisible(on) {
 function fdClearAll() { fdSel = {}; fdRenderNodes(); }
 function fdUpdateCount() {
     document.getElementById('fdSelCount').textContent =
-        Object.keys(fdSel).length + ' of ' + fdNodes.length + ' selected';
+        T('selectedCount', Object.keys(fdSel).length, fdNodes.length);
 }
 
 function fdDistribute() {
-    if (fdPicked == '') { fdShow('err', 'Choose a file from My Files first.'); return; }
+    if (fdPicked == '') { fdShow('err', T('pickFileFirst')); return; }
     var folder = document.getElementById('fdFolder').value.trim();
-    if (folder == '') { fdShow('err', 'Enter the folder the file should go into.'); return; }
+    if (folder == '') { fdShow('err', T('enterFolder')); return; }
     var name = document.getElementById('fdName').value.trim();
     if (name == '') name = fdBaseName(fdPicked);
-    if (/[\\\/]/.test(name)) { fdShow('err', 'The file name cannot contain a slash.'); return; }
+    if (/[\\\/]/.test(name)) { fdShow('err', T('noSlashInName')); return; }
     var ids = Object.keys(fdSel);
-    if (ids.length == 0) { fdShow('err', 'Select at least one device.'); return; }
+    if (ids.length == 0) { fdShow('err', T('selectDevice')); return; }
     var cpath = fdJoin(folder, name);
-    fdOpen('Distribute file',
+    fdOpen(T('distributeTitle'),
         'Send <b>' + fdEsc(fdBaseName(fdPicked)) + '</b> to <b>' + ids.length + '</b> device(s)?' +
         '<div class="fdMono" style="margin-top:8px;">' + fdEsc(cpath) + '</div>' +
         '<div class="fdMuted" style="margin-top:8px;">A file already at that path on a device is replaced. ' +
@@ -513,7 +535,7 @@ function fdDistribute() {
                 nodeids: ids, spath: fdPicked, cpath: cpath });
             fdRecentAdd(folder);
             fdClose();
-        }, 'Distribute');
+        }, T('distribute'));
 }
 
 function fdLoadOverview() {
@@ -549,7 +571,7 @@ function fdOnOverview(ev) {
         tr.innerHTML =
             '<td>' + fdEsc(fdFileNice(g.serverpath)) + '</td>' +
             '<td class="fdMono">' + fdEsc(g.clientpath) + '</td>' +
-            '<td>' + g.nodes.length + ' device(s)<div class="fdNodeChips">' + chips + '</div></td>' +
+            '<td>' + T('deviceCount', g.nodes.length) + '<div class="fdNodeChips">' + chips + '</div></td>' +
             '<td><button onclick="fdRemoveGroup(' + idx + ');">Remove all</button></td>';
     });
     window.fdGroups = keys.map(function (k) { return groups[k]; });
@@ -558,14 +580,14 @@ function fdOnOverview(ev) {
 function fdRemoveGroup(idx) {
     var g = window.fdGroups[idx];
     if (g == null) return;
-    fdConfirmRemove('Remove distribution',
+    fdConfirmRemove(T('removeTitle'),
         'Stop distributing this file to <b>' + g.nodes.length + '</b> device(s)?',
         g.clientpath, g.ids);
 }
 function fdRemoveOne(idx, j) {
     var g = window.fdGroups[idx];
     if ((g == null) || (g.ids[j] == null)) return;
-    fdConfirmRemove('Remove distribution',
+    fdConfirmRemove(T('removeTitle'),
         'Stop distributing this file to <b>' + fdEsc(fdNodeName(g.nodes[j])) + '</b>?',
         g.clientpath, [g.ids[j]]);
 }
@@ -580,7 +602,7 @@ function fdConfirmRemove(title, question, clientpath, ids) {
             var del = document.getElementById('fdDelFileBulk').checked;
             fdHost().meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'deleteMapsBulk', ids: ids, deleteFile: del });
             fdClose();
-        }, 'Remove');
+        }, T('remove'));
 }
 
 function fdOnBulk(ev) {
@@ -588,12 +610,12 @@ function fdOnBulk(ev) {
     var r = (ev && ev.result) ? ev.result : {};
     if (r.error) { fdShow('err', r.error); return; }
     if (ev.kind == 'add') {
-        var t = 'Added to ' + r.added + ' device(s).';
-        if (r.skipped > 0) t += ' ' + r.skipped + ' skipped (already had this file, or you cannot manage them).';
+        var t = T('addedTo', r.added);
+        if (r.skipped > 0) t += ' ' + T('addSkipped', r.skipped);
         fdShow('ok', t);
     } else {
-        var t2 = 'Removed from ' + r.removed + ' device(s).';
-        if (r.skipped > 0) t2 += ' ' + r.skipped + ' skipped.';
+        var t2 = T('removedFrom', r.removed);
+        if (r.skipped > 0) t2 += ' ' + T('removeSkipped', r.skipped);
         fdShow('ok', t2);
     }
     fdLoadOverview();
@@ -606,19 +628,31 @@ function fdOnUiConfig(ev) {
 }
 function fdOpenSettings() {
     var cfg = window.fdUiConfig || { devicesButton: false };
+    var cur = 'auto';
+    try { cur = localStorage.getItem('fd_lang') || 'auto'; } catch (e) { }
+    var opts = '<option value="auto"' + ((cur == 'auto') ? ' selected' : '') + '>' + T('langAuto') + '</option>';
+    var names = { en: 'English', ru: '\u0420\u0443\u0441\u0441\u043a\u0438\u0439' };
+    for (var k in FD_STR) { opts += '<option value="' + k + '"' + ((cur == k) ? ' selected' : '') + '>' + (names[k] || k) + '</option>'; }
     var body =
+        '<div style="margin-bottom:12px;"><b>' + T('language') + '</b><br>' +
+        '<select id="fdLangSel" style="margin-top:4px;">' + opts + '</select></div>' +
         '<label><input type="checkbox" id="fdDevBtnChk"' + (cfg.devicesButton ? ' checked' : '') +
-        (fdCanManageUi ? '' : ' disabled') + '> Show a "Distribute File" button on the My Devices toolbar</label>' +
-        '<div class="fdMuted" style="margin-top:8px;">Opens this page in a new tab with the devices selected on ' +
-        'My Devices carried over. The button appears next to the existing Group Action button; it needs My Devices ' +
-        'to be the first page you land on after a login or refresh, same as the equivalent button in Quick Commands.</div>' +
-        (fdCanManageUi ? '' : '<div class="fdMuted" style="margin-top:8px;">Changing this needs full site administrator rights.</div>');
-    fdOpen('My Devices button', body, fdCanManageUi ? function () {
-        var on = document.getElementById('fdDevBtnChk').checked;
-        fdHost().meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'saveUiConfig', config: { devicesButton: on } });
-        fdShow('ok', 'Saved. Reload My Devices to see the change.');
+        (fdCanManageUi ? '' : ' disabled') + '> ' + T('settingsShow') + '</label>' +
+        '<div class="fdMuted" style="margin-top:8px;">' + T('settingsNote') + '</div>' +
+        (fdCanManageUi ? '' : '<div class="fdMuted" style="margin-top:8px;">' + T('settingsAdminOnly') + '</div>');
+    fdOpen(T('settingsTitle'), body, function () {
+        // Language is a per-browser choice and needs no rights.
+        var sel = document.getElementById('fdLangSel').value;
+        try { localStorage.setItem('fd_lang', sel); } catch (e) { }
+        if (fdCanManageUi) {
+            var on = document.getElementById('fdDevBtnChk').checked;
+            fdHost().meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'saveUiConfig', config: { devicesButton: on } });
+        }
         fdClose();
-    } : null, 'Save');
+        // Re-read the dictionary and repaint everything that is already on screen.
+        fdInitLang(); fdApplyLang(); fdRenderNodes(); fdRenderMeshes(); fdRenderTags(); fdLoadOverview();
+        fdShow('ok', T('settingsSaved'));
+    }, T('save'));
 }
 </script>
 </html>
