@@ -13,10 +13,12 @@ var db = require('SimpleDataStore').Shared();
 var debug_flag = true;
 var periodicFileIntegrityTimer = null;
 var fileMaps = {};
-var FD_MOD_VER = '0.5.2'; // reported to the server so a stale agent core is obvious
+var FD_MOD_VER = '0.6.0'; // reported to the server so a stale agent core is obvious
 
 var fs = require('fs');
 var fileBuffer = {};
+var fetching = {};   // clientpath -> timestamp of the transfer in flight
+var FETCH_STALE = 10 * 60 * 1000; // a transfer older than this is treated as dead
 var lastRun = null;
 
 var dbg = function(str) {
@@ -76,6 +78,7 @@ function consoleaction(args, rights, sessionid, parent) {
                 delete fileBuffer[rfn];
             }
             if (fileMaps[rfn] != null) { delete fileMaps[rfn]; }
+            delete fetching[rfn];
             if (args.deleteFile !== true) { fdReport(rfn, true, 'map removed, file kept'); break; }
             if (args.deleteFile === true) {
                 var ract = null;
@@ -121,13 +124,29 @@ function consoleaction(args, rights, sessionid, parent) {
             try {
                 var fn = args.clientpath;
                 if (args.data == 'END') {
-                    //dbg('ending');
                     if (fileBuffer[fn] != null) {
-                        //dbg('nnending');
-                        fileBuffer[fn].end(); 
-                        fileBuffer[fn] = null;
+                        try { fileBuffer[fn].end(); } catch (e) { }
+                        delete fileBuffer[fn];
                     }
-                    delete fileBuffer[fn];
+                    delete fetching[fn];
+                    // A half-arrived executable is worse than none: it will simply
+                    // fail to run. Check the result against the size we were told to
+                    // expect and drop it if it does not match.
+                    var want = fileMaps[fn];
+                    if (typeof want == 'number') {
+                        var got = null;
+                        try { got = fs.statSync(fn).size; } catch (e) { got = null; }
+                        if (got == null) {
+                            dbg('transfer of ' + fn + ' finished but the file is missing');
+                            fdReport(fn, false, 'missing after transfer');
+                        } else if (got !== want) {
+                            dbg('transfer of ' + fn + ' ended at ' + got + ' bytes, expected ' + want + '; discarding');
+                            fdDeleteFile(fn);
+                            fdReport(fn, false, 'incomplete transfer (' + got + ' of ' + want + ')');
+                        } else {
+                            dbg('transfer of ' + fn + ' complete, ' + got + ' bytes');
+                        }
+                    }
                     return;
                 }
                 if (fileBuffer[fn] == null) {
@@ -140,7 +159,9 @@ function consoleaction(args, rights, sessionid, parent) {
                 fileBuffer[fn].write(buf);
                 
             } catch(e) {
-                dbg('Couldnt do it' + e.stack);
+                dbg('write failed for ' + args.clientpath + ': ' + e);
+                fdResetTransfer(args.clientpath);
+                delete fetching[args.clientpath];
             }
         break;
         default:
@@ -178,6 +199,17 @@ function fdReport(clientpath, ok, detail) {
 }
 
 function fetchFile(cPath) {
+    // Two requests for the same file used to share one open write stream, so the
+    // second transfer appended to the first and produced a larger, broken file.
+    // Only one transfer per path is allowed at a time.
+    var now = Date.now();
+    if ((fetching[cPath] != null) && ((now - fetching[cPath]) < FETCH_STALE)) {
+        dbg('already fetching ' + cPath + ', ignoring the duplicate request');
+        return;
+    }
+    if (fetching[cPath] != null) { dbg('previous fetch of ' + cPath + ' never finished, restarting'); }
+    fdResetTransfer(cPath);
+    fetching[cPath] = now;
     mesh.SendCommand({ 
         "action": "plugin", 
         "plugin": "filedist",
@@ -187,6 +219,13 @@ function fetchFile(cPath) {
         "tag": "console"
     });
 }
+function fdResetTransfer(fn) {
+    if (fileBuffer[fn] != null) {
+        try { fileBuffer[fn].end(); } catch (e) { }
+        delete fileBuffer[fn];
+    }
+}
+
 function saveFileVerification(fObj) {
     fileMaps[fObj.clientpath] = fObj.filesize;
 }
