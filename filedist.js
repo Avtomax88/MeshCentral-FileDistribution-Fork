@@ -269,7 +269,17 @@ module.exports.filedist = function (parent) {
             b.id = 'fdDevicesBtn'; b.type = 'button';
             b.className = (typeof showModal === 'function') ? (ga.className + ' fdDevBtnBs').replace('btn-primary', 'btn-secondary') : 'fdDevBtn';
             b.title = 'Distribute a file to the selected devices';
-            b.textContent = '\u2318 Distribute File';
+            // The dictionary file is not loaded in the host page, so this one
+            // label carries its own translations.
+            var lbl = { en: 'Distribute File', ru: '\u0420\u0430\u0437\u0434\u0430\u0442\u044c \u0444\u0430\u0439\u043b' };
+            var lg = 'en';
+            try {
+                var pick = localStorage.getItem('fd_lang');
+                lg = ((pick != null) && (pick != 'auto') && lbl[pick]) ? pick
+                   : (navigator.language || 'en').substring(0, 2).toLowerCase();
+                if (lbl[lg] == null) lg = 'en';
+            } catch (e) { lg = 'en'; }
+            b.textContent = '\u2318 ' + lbl[lg];
             b.style.marginLeft = '4px';
             b.disabled = ga.disabled;
             b.onclick = function () {
