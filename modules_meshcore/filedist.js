@@ -10,7 +10,7 @@ var mesh;
 var obj = this;
 var _sessionid;
 var db = require('SimpleDataStore').Shared();
-var debug_flag = true;
+var debug_flag = false;
 var periodicFileIntegrityTimer = null;
 var fileMaps = {};
 var FD_MOD_VER = '0.6.1'; // reported to the server so a stale agent core is obvious
