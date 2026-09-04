@@ -13,7 +13,7 @@ var db = require('SimpleDataStore').Shared();
 var debug_flag = true;
 var periodicFileIntegrityTimer = null;
 var fileMaps = {};
-var FD_MOD_VER = '0.6.0'; // reported to the server so a stale agent core is obvious
+var FD_MOD_VER = '0.6.1'; // reported to the server so a stale agent core is obvious
 
 var fs = require('fs');
 var fileBuffer = {};
@@ -150,9 +150,11 @@ function consoleaction(args, rights, sessionid, parent) {
                     return;
                 }
                 if (fileBuffer[fn] == null) {
-                    // 'w' opens for writing and truncates an existing file first, so a
-                    // shorter replacement never leaves old bytes trailing at the end.
-                    fileBuffer[fn] = fs.createWriteStream(fn, { flags: 'w' });
+                    // 'wb' truncates AND opens in binary mode. The 'b' is not a Node
+                    // flag, but the agent's file layer honours it, and without it every
+                    // 0x0A byte is written as 0x0D 0x0A - which silently inflates and
+                    // ruins any binary being distributed. Do not "simplify" this to 'w'.
+                    fileBuffer[fn] = fs.createWriteStream(fn, { flags: 'wb' });
                 }
                 
                 var buf = Buffer.from(args.data, "hex");
