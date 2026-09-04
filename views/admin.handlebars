@@ -101,7 +101,7 @@
         <div class="fdRecentWrap" id="fdRecentWrap"></div>
         <label style="margin-top:8px;" data-i18n="saveAs">Save as (empty keeps the original name)</label>
         <input type="text" id="fdName" oninput="fdPreview();" />
-        <div class="fdMuted" style="margin-top:6px;">Will be written to (existing file with the same name is replaced):</div>
+        <div class="fdMuted" style="margin-top:6px;" data-i18n="willBeWritten">Will be written to (existing file with the same name is replaced):</div>
         <div id="fdPrev" class="fdMono">&mdash;</div>
       </div>
     </div>
@@ -144,9 +144,9 @@
     <button onclick="fdLoadOverview();"data-i18n="refresh">Refresh</button></div>
   <div class="fdPanelBody">
     <div class="fdGrow" style="overflow:auto;display:block;"><table class="fdOv"><thead><tr>
-      <th width="30%">File</th><th width="30%">Path on device</th><th width="30%">Devices</th><th width="10%"></th>
+      <th width="30%" data-i18n="colFile">File</th><th width="30%" data-i18n="colPath">Path on device</th><th width="30%" data-i18n="colDevices">Devices</th><th width="10%"></th>
     </tr></thead><tbody id="fdOvBody"></tbody></table></div>
-    <div id="fdOvEmpty" class="fdMuted" style="padding:10px 4px;">Nothing is being distributed yet.</div>
+    <div id="fdOvEmpty" class="fdMuted" style="padding:10px 4px;" data-i18n="nothingYet">Nothing is being distributed yet.</div>
   </div>
 </div>
 
@@ -571,7 +571,7 @@ function fdOnOverview(ev) {
             '<td>' + fdEsc(fdFileNice(g.serverpath)) + '</td>' +
             '<td class="fdMono">' + fdEsc(g.clientpath) + '</td>' +
             '<td>' + T('deviceCount', g.nodes.length) + '<div class="fdNodeChips">' + chips + '</div></td>' +
-            '<td><button onclick="fdRemoveGroup(' + idx + ');">Remove all</button></td>';
+            '<td><button onclick="fdRemoveGroup(' + idx + ');">' + T('removeAll') + '</button></td>';
     });
     window.fdGroups = keys.map(function (k) { return groups[k]; });
     document.getElementById('fdOvEmpty').style.display = (keys.length == 0) ? '' : 'none';
