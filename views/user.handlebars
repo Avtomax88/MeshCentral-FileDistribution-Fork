@@ -1,6 +1,7 @@
 <html>
 <head>
     <script type="text/javascript" src="scripts/common-0.0.1.js"></script>
+    <script type="text/javascript" src="pluginadmin.ashx?pin=filedist&include=1&path=fdlang.js"></script>
 </head>
 <style>
     body { font-family: "Trebuchet MS", Arial, Helvetica, sans-serif; font-size: 13px; margin: 0; padding: 4px; }
@@ -35,9 +36,9 @@
 <div id="fileDistUser">
   <div id="fileDist_main">
       <table id="fdMaps">
-          <tr><th width="40%">Server Path</th><th width="40%">Client Path</th><th width="20%">Delete</th></tr>
+          <tr><th width="40%" data-i18n="serverPath">Server Path</th><th width="40%" data-i18n="clientPath">Client Path</th><th width="20%" data-i18n="deleteCol">Delete</th></tr>
       </table>
-      <div id="fdEmpty">No files are distributed to this device yet.</div>
+      <div id="fdEmpty" data-i18n="noMapsHere">No files are distributed to this device yet.</div>
       <span id="goAdd" onclick="goAdd();">[+]</span>
   </div>
 </div>
@@ -48,7 +49,7 @@
     <div id="fdDlgBody"></div>
     <div id="fdErr"></div>
     <div id="fdDlgFoot">
-      <input type="button" id="fdCancel" value="Cancel" onclick="fdClose();" />
+      <input type="button" id="fdCancel" value="Cancel" data-i18n-val="cancel" onclick="fdClose();" />
       <input type="button" id="fdOk" value="OK" onclick="fdConfirm();" />
     </div>
   </div>
@@ -68,6 +69,19 @@ var fdSelectedPath = '';
 function fdNodeId() {
     var m = /[?&]node=([^&]+)/.exec(window.location.search);
     return (m == null) ? null : decodeURIComponent(m[1]);
+}
+
+var T = null;
+function fdInitLang() {
+    var hostLang = null;
+    try { hostLang = parent.currentUserLanguage || (parent.navigator ? parent.navigator.language : null); } catch (e) { }
+    var lang = 'en';
+    try { lang = fdPickLang(hostLang); } catch (e) { }
+    try { T = fdMakeT(lang); } catch (e) { T = function (k) { return k; }; }
+    var i, els = document.querySelectorAll('[data-i18n]');
+    for (i = 0; i < els.length; i++) { els[i].textContent = T(els[i].getAttribute('data-i18n')); }
+    els = document.querySelectorAll('[data-i18n-val]');
+    for (i = 0; i < els.length; i++) { els[i].value = T(els[i].getAttribute('data-i18n-val')); }
 }
 
 function fdEsc(s) {
@@ -99,6 +113,7 @@ document.addEventListener('keydown', function (e) {
 });
 
 function doOnLoad() {
+  if (T == null) fdInitLang();
   fTree = []; loc = []; niceLoc = [];
   try { parseFileTree(); } catch (e) { fTree = []; }
   parseNicePaths();
@@ -128,8 +143,8 @@ function redrawMaps() {
 function goAdd() {
     fdSelectedPath = '';
     if (fTree.length == 0) {
-        fdOpen('Choose File to Distribute',
-            'No files were found under My Files. Upload a file on the Files tab first, then try again.', null);
+        fdOpen(T('chooseFile'),
+            T('noFilesUpload'), null);
         return;
     }
     var h = '<div id="fdFileList">';
@@ -137,7 +152,7 @@ function goAdd() {
         h += '<div class="fdfh" x-data-spath="' + fdEsc(a.linkpath) + '" onclick="fileSelected(this);">' + fdEsc(a.nicepath) + '</div>';
     });
     h += '</div><div>Filter: <input id="fdfilter" class="fdInput" type="text" onkeyup="filterFiles(this);" /></div>';
-    fdOpen('Choose File to Distribute', h, goAddEx, 'Next');
+    fdOpen(T('chooseFile'), h, goAddEx, T('next'));
     fdFocus('fdfilter');
 }
 function fileSelected(el) {
@@ -179,17 +194,17 @@ function fdPreview() {
 }
 
 function goAddEx() {
-    if (fdSelectedPath == '') { fdShowErr('Choose a file from the list first.'); return; }
+    if (fdSelectedPath == '') { fdShowErr(T('pickFileList')); return; }
     var keep = fdSelectedPath;
     var orig = fdBaseName(keep);
-    fdOpen('Choose Location on Endpoint',
+    fdOpen(T('chooseLocation'),
         '<div style="margin-bottom:6px;">Folder on the device:</div>' +
         '<input type="text" class="fdInput" placeholder="C:\\Users\\Public\\Desktop" id="fdclientFolder" list="fdFolderHist" oninput="fdPreview();" /><datalist id="fdFolderHist"></datalist>' +
         '<div style="margin:10px 0 6px 0;">Save as <span style="color:#666;">(leave empty to keep <b>' + fdEsc(orig) + '</b>)</span>:</div>' +
         '<input type="text" class="fdInput" placeholder="' + fdEsc(orig) + '" id="fdclientName" oninput="fdPreview();" />' +
         '<div style="margin-top:10px;color:#666;">Will be written to:</div>' +
         '<div id="fdpreview" style="font-family:Consolas,monospace;word-break:break-all;">\u2014</div>',
-        function () { goAddEx2(keep); }, 'Add');
+        function () { goAddEx2(keep); }, T('add'));
     fdFocus('fdclientFolder');
     // Same 10-entry history the bulk distribution page uses; typing here shares it.
     try {
@@ -210,14 +225,14 @@ function fdRememberFolder(folder) {
 }
 function goAddEx2(spath) {
     var folder = document.getElementById('fdclientFolder').value.trim();
-    if (folder == '') { fdShowErr('Enter the folder the file should go into.'); return; }
+    if (folder == '') { fdShowErr(T('enterFolder')); return; }
     var typed = document.getElementById('fdclientName').value.trim();
     var name = (typed == '') ? fdBaseName(spath) : typed;
-    if (/[\\\/]/.test(name)) { fdShowErr('The file name cannot contain a slash. Put folders in the field above.'); return; }
+    if (/[\\\/]/.test(name)) { fdShowErr(T('noSlashInNameLong')); return; }
     var cpath = fdJoin(folder, name);
-    if (cpath == '') { fdShowErr('That folder could not be read as a path.'); return; }
+    if (cpath == '') { fdShowErr(T('badFolder')); return; }
     var nodeid = fdNodeId();
-    if (nodeid == null) { fdShowErr('This device could not be identified. Reload the page and try again.'); return; }
+    if (nodeid == null) { fdShowErr(T('noDeviceId')); return; }
     fdRememberFolder(folder);
     parent.meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'addFileMap',
         spath: spath, cpath: cpath, currentNodeId: nodeid });
@@ -235,7 +250,7 @@ function deleteMap(el) {
             parent.meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'deleteMap',
                 id: mid, deleteFile: del });
             fdClose();
-        }, 'Delete');
+        }, T('deleteWord'));
 }
 
 parent.pluginHandler.filedist.loadMaps = function (msg) {
