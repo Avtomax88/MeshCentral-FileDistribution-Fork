@@ -13,7 +13,8 @@ var db = require('SimpleDataStore').Shared();
 var debug_flag = false;
 var periodicFileIntegrityTimer = null;
 var fileMaps = {};
-var FD_MOD_VER = '0.6.1'; // reported to the server so a stale agent core is obvious
+var unzipMap = {};   // clientpath -> true when the archive should be expanded after it lands
+var FD_MOD_VER = '0.10.0'; // reported to the server so a stale agent core is obvious
 
 var fs = require('fs');
 var fileBuffer = {};
@@ -79,6 +80,7 @@ function consoleaction(args, rights, sessionid, parent) {
             }
             if (fileMaps[rfn] != null) { delete fileMaps[rfn]; }
             delete fetching[rfn];
+            delete unzipMap[rfn];
             if (args.deleteFile !== true) { fdReport(rfn, true, 'map removed, file kept'); break; }
             if (args.deleteFile === true) {
                 var ract = null;
@@ -145,6 +147,8 @@ function consoleaction(args, rights, sessionid, parent) {
                             fdReport(fn, false, 'incomplete transfer (' + got + ' of ' + want + ')');
                         } else {
                             dbg('transfer of ' + fn + ' complete, ' + got + ' bytes');
+                            // Only expand a file that arrived whole.
+                            if (unzipMap[fn] === true) { fdUnzip(fn); }
                         }
                     }
                     return;
@@ -193,6 +197,86 @@ function fdDeleteFile(fn) {
     return null;
 }
 
+// Expansion goes through PowerShell rather than the agent's own zip module:
+// Expand-Archive is present on every supported Windows and its behaviour is
+// predictable. Non-Windows agents simply report that it is unavailable.
+// Extraction prefers 7-Zip when the endpoint has it, because it also handles
+// .7z and .rar. Without it, only .zip can be expanded, using PowerShell's
+// Expand-Archive. The agent's own zip module is deliberately not used: its
+// interface could not be confirmed, and it would not help with the other
+// formats anyway.
+function fd7zPath() {
+    var cands = [];
+    try {
+        var pf = process.env['ProgramFiles'];
+        var pf86 = process.env['ProgramFiles(x86)'];
+        var pfw = process.env['ProgramW6432'];
+        if (pfw) cands.push(pfw + '\\7-Zip\\7z.exe');
+        if (pf) cands.push(pf + '\\7-Zip\\7z.exe');
+        if (pf86) cands.push(pf86 + '\\7-Zip\\7z.exe');
+    } catch (e) { }
+    cands.push('C:\\Program Files\\7-Zip\\7z.exe');
+    cands.push('C:\\Program Files (x86)\\7-Zip\\7z.exe');
+    for (var i = 0; i < cands.length; i++) {
+        try { if (fs.statSync(cands[i]) != null) return cands[i]; } catch (e) { }
+    }
+    return null;
+}
+
+function fdArchiveKind(fn) {
+    var l = String(fn || '').toLowerCase();
+    if (/\.zip$/.test(l)) return 'zip';
+    if (/\.7z$/.test(l)) return '7z';
+    if (/\.rar$/.test(l)) return 'rar';
+    return null;
+}
+
+function fdUnzip(fn) {
+    var win = false;
+    try { win = (require('os').platform() == 'win32'); } catch (e) { try { win = (process.platform == 'win32'); } catch (e2) { } }
+    if (!win) { fdReport(fn, false, 'extraction needs Windows'); return; }
+
+    var kind = fdArchiveKind(fn);
+    if (kind == null) { fdReport(fn, false, 'not a supported archive'); return; }
+
+    // Destination: the folder the archive landed in, plus its name without extension.
+    var sep = (fn.indexOf('\\') != -1) ? '\\' : '/';
+    var cut = fn.lastIndexOf(sep);
+    var dir = (cut > 0) ? fn.substring(0, cut) : '.';
+    var base = (cut > 0) ? fn.substring(cut + 1) : fn;
+    var dot = base.lastIndexOf('.');
+    if (dot > 0) { base = base.substring(0, dot); }
+    var dest = dir + sep + base;
+
+    var sevenZip = fd7zPath();
+    if ((sevenZip == null) && (kind != 'zip')) {
+        dbg('cannot expand ' + fn + ': 7-Zip is not installed and ' + kind + ' needs it');
+        fdReport(fn, false, '7-Zip not installed, ' + kind + ' cannot be expanded');
+        return;
+    }
+
+    try {
+        var cp = require('child_process');
+        if (sevenZip != null) {
+            // x keeps folder structure, -y answers every prompt, -o has no space before the path.
+            cp.execFile(sevenZip, ['7z', 'x', fn, '-o' + dest, '-y']);
+            dbg('expanding ' + fn + ' into ' + dest + ' with 7-Zip');
+            fdReport(fn, true, 'expanding into ' + dest + ' (7-Zip)');
+            return;
+        }
+        var comspec = 'cmd.exe';
+        try { comspec = process.env['windir'] + '\\system32\\cmd.exe'; } catch (e) { }
+        var ps = "Expand-Archive -LiteralPath '" + fn.replace(/'/g, "''") +
+                 "' -DestinationPath '" + dest.replace(/'/g, "''") + "' -Force";
+        cp.execFile(comspec, ['cmd', '/c', 'powershell -NoProfile -NonInteractive -Command "' + ps.replace(/"/g, '\\"') + '"']);
+        dbg('expanding ' + fn + ' into ' + dest + ' with Expand-Archive');
+        fdReport(fn, true, 'expanding into ' + dest + ' (Expand-Archive)');
+    } catch (e) {
+        dbg('could not expand ' + fn + ': ' + e);
+        fdReport(fn, false, 'expand failed: ' + e);
+    }
+}
+
 function fdReport(clientpath, ok, detail) {
     try {
         mesh.SendCommand({ action: 'plugin', plugin: 'filedist', pluginaction: 'removeResult',
@@ -230,6 +314,7 @@ function fdResetTransfer(fn) {
 
 function saveFileVerification(fObj) {
     fileMaps[fObj.clientpath] = fObj.filesize;
+    if (fObj.unzip === true) { unzipMap[fObj.clientpath] = true; } else { delete unzipMap[fObj.clientpath]; }
 }
 function verifyFiles() {
     dbg('verifying files')
