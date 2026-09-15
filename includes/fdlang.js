@@ -74,6 +74,9 @@ var FD_STR = {
         deleteNote: 'Only devices that are online right now can delete the file. A file that was replaced or edited on a device is left alone.',
         keepNote: 'Leave this unticked to keep the file where it is and only stop keeping it up to date.',
         carriedOver: '{0} device(s) carried over from My Devices.',
+        filesSelected: '{0} file(s) selected',
+        clearFiles: 'Clear selection',
+        addedFiles: '{0} file(s) added across {1} device entries.',
         removeOneAskName: 'Stop distributing this file to <b>{0}</b>?',
         stopOnThisDevice: 'Stop distributing this file to the device?',
 
@@ -175,6 +178,9 @@ var FD_STR = {
         deleteNote: 'Удалить файл могут только устройства, которые сейчас в сети. Файл, заменённый или изменённый на устройстве, останется нетронутым.',
         keepNote: 'Без галочки файл останется на месте и просто перестанет обновляться.',
         carriedOver: 'Перенесено из «Мои устройства»: {0}.',
+        filesSelected: 'выбрано файлов: {0}',
+        clearFiles: 'Снять выбор',
+        addedFiles: 'Файлов: {0}, записей на устройствах: {1}.',
         removeOneAskName: 'Прекратить раздачу этого файла на <b>{0}</b>?',
         stopOnThisDevice: 'Прекратить раздачу этого файла на это устройство?',
 
