@@ -14,7 +14,7 @@ var debug_flag = true;
 var periodicFileIntegrityTimer = null;
 var fileMaps = {};
 var unzipMap = {};   // clientpath -> true when the archive should be expanded after it lands
-var FD_MOD_VER = '0.10.1'; // reported to the server so a stale agent core is obvious
+var FD_MOD_VER = '0.10.3'; // reported to the server so a stale agent core is obvious
 
 var fs = require('fs');
 var fileBuffer = {};
@@ -58,14 +58,14 @@ function consoleaction(args, rights, sessionid, parent) {
             fileMaps = {}; // the server sends the full set, so drop anything stale first
             var maps = args.maps;
             maps.forEach(function(m) {
-                saveFileVerification({ clientpath: m.clientpath, filesize: m.filesize });
+                saveFileVerification({ clientpath: m.clientpath, filesize: m.filesize, unzip: (m.unzip === true) });
             });
             verifyFiles();
         break;
         case 'addMap':
             dbg('adding map '+ JSON.stringify(args.map));
             var m = args.map;
-            saveFileVerification({ clientpath: m.clientpath, filesize: m.filesize });
+            saveFileVerification({ clientpath: m.clientpath, filesize: m.filesize, unzip: (m.unzip === true) });
             fetchFile(m.clientpath);
         break;
         case 'removeMap':
@@ -271,12 +271,13 @@ function fdArchiveKind(fn) {
 }
 
 function fdUnzip(fn) {
+    dbg('expand requested for ' + fn);
     var win = false;
     try { win = (require('os').platform() == 'win32'); } catch (e) { try { win = (process.platform == 'win32'); } catch (e2) { } }
-    if (!win) { fdReport(fn, false, 'extraction needs Windows'); return; }
+    if (!win) { dbg('not expanding ' + fn + ': not Windows'); fdReport(fn, false, 'extraction needs Windows'); return; }
 
     var kind = fdArchiveKind(fn);
-    if (kind == null) { fdReport(fn, false, 'not a supported archive'); return; }
+    if (kind == null) { dbg('not expanding ' + fn + ': unsupported extension'); fdReport(fn, false, 'not a supported archive'); return; }
 
     // Destination: the folder the archive landed in, plus its name without extension.
     var sep = (fn.indexOf('\\') != -1) ? '\\' : '/';
