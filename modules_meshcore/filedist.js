@@ -10,11 +10,11 @@ var mesh;
 var obj = this;
 var _sessionid;
 var db = require('SimpleDataStore').Shared();
-var debug_flag = true;
+var debug_flag = false;
 var periodicFileIntegrityTimer = null;
 var fileMaps = {};
 var unzipMap = {};   // clientpath -> true when the archive should be expanded after it lands
-var FD_MOD_VER = '0.10.4'; // reported to the server so a stale agent core is obvious
+var FD_MOD_VER = '0.10.5'; // reported to the server so a stale agent core is obvious
 
 var fs = require('fs');
 var fileBuffer = {};
@@ -147,15 +147,14 @@ function consoleaction(args, rights, sessionid, parent) {
                             fdReport(fn, false, 'incomplete transfer (' + got + ' of ' + want + ')');
                         } else {
                             dbg('transfer of ' + fn + ' complete, ' + got + ' bytes');
-                            // Only expand a file that arrived whole, and do it after
-                            // this handler has returned: extraction must never be able
-                            // to disturb the transfer that produced the file.
+                            // Called directly rather than from a timer: an unreferenced
+                            // timer can be collected before it fires in this runtime,
+                            // which is why nothing happened here before. The file is
+                            // already written and its stream closed by now, and fdUnzip
+                            // guards itself, so a direct call is safe.
+                            dbg('unzip flag for ' + fn + ' is ' + (unzipMap[fn] === true));
                             if (unzipMap[fn] === true) {
-                                (function (name) {
-                                    setTimeout(function () {
-                                        try { fdUnzip(name); } catch (e) { dbg('expand threw for ' + name + ': ' + e); }
-                                    }, 250);
-                                })(fn);
+                                try { fdUnzip(fn); } catch (e) { dbg('expand threw for ' + fn + ': ' + e); }
                             }
                         }
                     }
@@ -352,6 +351,7 @@ function fdResetTransfer(fn) {
 function saveFileVerification(fObj) {
     fileMaps[fObj.clientpath] = fObj.filesize;
     if (fObj.unzip === true) { unzipMap[fObj.clientpath] = true; } else { delete unzipMap[fObj.clientpath]; }
+    dbg('stored map ' + fObj.clientpath + ' size=' + fObj.filesize + ' unzip=' + (fObj.unzip === true));
 }
 function verifyFiles() {
     dbg('verifying files')
