@@ -14,7 +14,7 @@ var debug_flag = true;
 var periodicFileIntegrityTimer = null;
 var fileMaps = {};
 var unzipMap = {};   // clientpath -> true when the archive should be expanded after it lands
-var FD_MOD_VER = '0.10.3'; // reported to the server so a stale agent core is obvious
+var FD_MOD_VER = '0.10.4'; // reported to the server so a stale agent core is obvious
 
 var fs = require('fs');
 var fileBuffer = {};
@@ -31,13 +31,13 @@ var dbg = function(str) {
     logStream.end('\n');
 }
 
+dbg('filedist module ' + FD_MOD_VER + ' loaded');
+
 if (periodicFileIntegrityTimer == null) { periodicFileIntegrityTimer = setInterval(verifyFiles, 1*60*1000*20); } // 20 minute(s)
 
-Array.prototype.remove = function(from, to) {
-  var rest = this.slice((to || from) + 1 || this.length);
-  this.length = from < 0 ? this.length + from : from;
-  return this.push.apply(this, rest);
-};
+// Note: the original plugin added Array.prototype.remove here. That is visible to
+// every script in the agent, so any for-in over an array elsewhere picks up the
+// extra key. Nothing in this module used it, so it is gone.
 
 function consoleaction(args, rights, sessionid, parent) {
     _sessionid = sessionid;
