@@ -93,13 +93,13 @@
     <div class="fdRow fdGrow">
       <div class="fdCol" style="flex:2;display:flex;flex-direction:column;">
         <label class="fdFixed" data-i18n="fileFromMyFiles">File from My Files</label>
-        <div id="fdFileBox"></div>
+        <div id="fdFileBox"></div>\n        <div class="fdMuted" style="margin-top:4px;"><span id="fdFileCount"></span> <a href="#" onclick="fdClearFiles();return false;" data-i18n="clearFiles">Clear selection</a></div>
       </div>
       <div class="fdCol">
         <label data-i18n="folderOnDevices">Folder on the devices</label>
         <input type="text" id="fdFolder" placeholder="C:\Users\Public\Desktop" data-i18n-ph="folderPlaceholder" oninput="fdPreview();" />
         <div class="fdRecentWrap" id="fdRecentWrap"></div>
-        <label style="margin-top:8px;" data-i18n="saveAs">Save as (empty keeps the original name)</label>
+        <label id="fdNameLabel" style="margin-top:8px;" data-i18n="saveAs">Save as (empty keeps the original name)</label>
         <input type="text" id="fdName" oninput="fdPreview();" />
         <div class="fdMuted" style="margin-top:6px;" data-i18n="willBeWritten">Will be written to (existing file with the same name is replaced):</div>
         <div id="fdPrev" class="fdMono">&mdash;</div>
@@ -170,7 +170,7 @@ var fdMeshSel = {};      // mesh id -> true
 var fdTagSel = {};       // tag -> true
 var fdPill = 'all';
 var fdFiles = [];        // {linkpath, nicepath}
-var fdPicked = '';
+var fdPicked = [];   // linkpath list; several files share one destination folder
 var fdOverview = [];
 var fdOnOk = null;
 var fdBig = false;
@@ -380,10 +380,16 @@ function fdRenderFiles() {
     box.innerHTML = h;
 }
 function fdPickFile(el) {
-    fdPicked = el.getAttribute('data-p');
+    var p = el.getAttribute('data-p');
+    var at = fdPicked.indexOf(p);
+    if (at >= 0) { fdPicked.splice(at, 1); el.classList.remove('sel'); }
+    else { fdPicked.push(p); el.classList.add('sel'); }
+    fdPreview();
+}
+function fdClearFiles() {
+    fdPicked = [];
     var all = document.querySelectorAll('.fdFile');
     for (var i = 0; i < all.length; i++) all[i].classList.remove('sel');
-    el.classList.add('sel');
     fdPreview();
 }
 function fdBaseName(p) { var a = String(p || '').split('/'); return a[a.length - 1]; }
@@ -396,10 +402,28 @@ function fdJoin(folder, name) {
     return t + sep + name;
 }
 function fdPreview() {
-    var name = document.getElementById('fdName').value.trim();
-    if (name == '') name = fdBaseName(fdPicked);
-    var full = (fdPicked == '') ? '' : fdJoin(document.getElementById('fdFolder').value, name);
-    document.getElementById('fdPrev').textContent = (full == '') ? '\u2014' : full;
+    var nameEl = document.getElementById('fdName');
+    var multi = (fdPicked.length > 1);
+    // With several files there is one name per file, so renaming makes no sense.
+    nameEl.disabled = multi;
+    if (multi) { nameEl.value = ''; }
+    var lab = document.getElementById('fdNameLabel');
+    if (lab != null) { lab.style.opacity = multi ? '0.5' : ''; }
+    var cnt = document.getElementById('fdFileCount');
+    if (cnt != null) { cnt.textContent = (fdPicked.length == 0) ? '' : T('filesSelected', fdPicked.length); }
+
+    var folder = document.getElementById('fdFolder').value;
+    var prev = document.getElementById('fdPrev');
+    if (fdPicked.length == 0) { prev.textContent = '\u2014'; return; }
+    var typed = nameEl.value.trim();
+    var lines = [], shown = Math.min(fdPicked.length, 8);
+    for (var i = 0; i < shown; i++) {
+        var nm = (!multi && (typed != '')) ? typed : fdBaseName(fdPicked[i]);
+        lines.push(fdJoin(folder, nm) || nm);
+    }
+    var html = lines.map(function (l) { return fdEsc(l); }).join('<br>');
+    if (fdPicked.length > shown) { html += '<br>' + fdEsc(T('andMore', fdPicked.length - shown)); }
+    prev.innerHTML = html;
 }
 
 // ---- Recent folders (kept in this browser only, via localStorage) ----
@@ -515,23 +539,33 @@ function fdUpdateCount() {
 }
 
 function fdDistribute() {
-    if (fdPicked == '') { fdShow('err', T('pickFileFirst')); return; }
+    if (fdPicked.length == 0) { fdShow('err', T('pickFileFirst')); return; }
     var folder = document.getElementById('fdFolder').value.trim();
     if (folder == '') { fdShow('err', T('enterFolder')); return; }
-    var name = document.getElementById('fdName').value.trim();
-    if (name == '') name = fdBaseName(fdPicked);
-    if (/[\\\/]/.test(name)) { fdShow('err', T('noSlashInName')); return; }
+    var multi = (fdPicked.length > 1);
+    var typed = document.getElementById('fdName').value.trim();
+    if (!multi && (typed != '') && /[\\\/]/.test(typed)) { fdShow('err', T('noSlashInName')); return; }
     var ids = Object.keys(fdSel);
     if (ids.length == 0) { fdShow('err', T('selectDevice')); return; }
-    var cpath = fdJoin(folder, name);
+
+    var items = fdPicked.map(function (sp) {
+        var nm = (!multi && (typed != '')) ? typed : fdBaseName(sp);
+        return { spath: sp, cpath: fdJoin(folder, nm) };
+    });
+    if (items.some(function (it) { return (it.cpath == ''); })) { fdShow('err', T('badFolder')); return; }
+
+    var what = multi ? T('filesSelected', fdPicked.length) : fdEsc(fdBaseName(fdPicked[0]));
+    var list = items.slice(0, 8).map(function (it) { return fdEsc(it.cpath); }).join('<br>');
+    if (items.length > 8) { list += '<br>' + fdEsc(T('andMore', items.length - 8)); }
+
     fdOpen(T('distributeTitle'),
-        T('distributeAsk', fdEsc(fdBaseName(fdPicked)), ids.length) +
-        '<div class="fdMono" style="margin-top:8px;">' + fdEsc(cpath) + '</div>' +
+        T('distributeAsk', what, ids.length) +
+        '<div class="fdMono" style="margin-top:8px;">' + list + '</div>' +
         '<div class="fdMuted" style="margin-top:8px;">' + T('replaceNote') + ' ' + T('distributeNote') + '</div>',
         function () {
             document.getElementById('fdGo').disabled = true;
             fdHost().meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'addFileMapBulk',
-                nodeids: ids, spath: fdPicked, cpath: cpath });
+                nodeids: ids, items: items });
             fdRecentAdd(folder);
             fdClose();
         }, T('distribute'));
@@ -609,8 +643,10 @@ function fdOnBulk(ev) {
     if (r.error) { fdShow('err', r.error); return; }
     if (ev.kind == 'add') {
         var t = T('addedTo', r.added);
+        if ((r.files != null) && (r.files > 1)) { t = T('addedFiles', r.files, r.added); }
         if (r.skipped > 0) t += ' ' + T('addSkipped', r.skipped);
         fdShow('ok', t);
+        if (r.added > 0) { fdClearFiles(); }
     } else {
         var t2 = T('removedFrom', r.removed);
         if (r.skipped > 0) t2 += ' ' + T('removeSkipped', r.skipped);
