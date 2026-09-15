@@ -10,11 +10,11 @@ var mesh;
 var obj = this;
 var _sessionid;
 var db = require('SimpleDataStore').Shared();
-var debug_flag = false;
+var debug_flag = true;
 var periodicFileIntegrityTimer = null;
 var fileMaps = {};
 var unzipMap = {};   // clientpath -> true when the archive should be expanded after it lands
-var FD_MOD_VER = '0.10.0'; // reported to the server so a stale agent core is obvious
+var FD_MOD_VER = '0.10.1'; // reported to the server so a stale agent core is obvious
 
 var fs = require('fs');
 var fileBuffer = {};
@@ -147,8 +147,16 @@ function consoleaction(args, rights, sessionid, parent) {
                             fdReport(fn, false, 'incomplete transfer (' + got + ' of ' + want + ')');
                         } else {
                             dbg('transfer of ' + fn + ' complete, ' + got + ' bytes');
-                            // Only expand a file that arrived whole.
-                            if (unzipMap[fn] === true) { fdUnzip(fn); }
+                            // Only expand a file that arrived whole, and do it after
+                            // this handler has returned: extraction must never be able
+                            // to disturb the transfer that produced the file.
+                            if (unzipMap[fn] === true) {
+                                (function (name) {
+                                    setTimeout(function () {
+                                        try { fdUnzip(name); } catch (e) { dbg('expand threw for ' + name + ': ' + e); }
+                                    }, 250);
+                                })(fn);
+                            }
                         }
                     }
                     return;
@@ -184,15 +192,12 @@ function fdDeleteFile(fn) {
     var win = false;
     try { win = (require('os').platform() == 'win32'); } catch (e) { try { win = (process.platform == 'win32'); } catch (e2) { } }
     try {
-        var cp = require('child_process');
         if (win) {
             var comspec = null;
             try { comspec = process.env['windir'] + '\\system32\\cmd.exe'; } catch (e) { comspec = 'cmd.exe'; }
-            cp.execFile(comspec, ['cmd', '/c', 'del /f /q "' + fn + '"']);
-            return 'cmd del';
+            return fdRun(comspec, ['cmd', '/c', 'del /f /q "' + fn + '"'], 'del', fn) ? 'cmd del' : null;
         }
-        cp.execFile('/bin/sh', ['sh', '-c', "rm -f '" + String(fn).replace(/'/g, "'\\''") + "'"]);
-        return 'rm';
+        return fdRun('/bin/sh', ['sh', '-c', "rm -f '" + String(fn).replace(/'/g, "'\\''") + "'"], 'rm', fn) ? 'rm' : null;
     } catch (e) { dbg('shell delete failed: ' + e); }
     return null;
 }
@@ -205,6 +210,40 @@ function fdDeleteFile(fn) {
 // Expand-Archive. The agent's own zip module is deliberately not used: its
 // interface could not be confirmed, and it would not help with the other
 // formats anyway.
+// Starting a child process in the agent needs care: the object must be kept
+// alive and its streams must have listeners, otherwise the runtime raises an
+// uncaught exception that takes down whatever called it. Everything here is
+// wrapped so a failure to launch can never affect the file transfer.
+var fdChildren = {};
+var fdChildSeq = 0;
+
+function fdRun(exe, args, label, fn) {
+    try {
+        var cp = require('child_process');
+        if ((cp == null) || (typeof cp.execFile != 'function')) { fdReport(fn, false, label + ': no child_process'); return false; }
+        var child = cp.execFile(exe, args);
+        if (child == null) { fdReport(fn, false, label + ': could not start'); return false; }
+        var id = 'c' + (++fdChildSeq);
+        fdChildren[id] = child;   // hold a reference until it exits
+        try {
+            if (child.stdout != null) { child.stdout.on('data', function () { }); }
+            if (child.stderr != null) { child.stderr.on('data', function () { }); }
+        } catch (e) { }
+        try {
+            child.on('exit', function (code) {
+                delete fdChildren[id];
+                dbg(label + ' finished with code ' + code + ' for ' + fn);
+                fdReport(fn, (code == 0), label + ' exit ' + code);
+            });
+        } catch (e) { delete fdChildren[id]; }
+        return true;
+    } catch (e) {
+        dbg(label + ' failed to start for ' + fn + ': ' + e);
+        fdReport(fn, false, label + ' failed to start: ' + e);
+        return false;
+    }
+}
+
 function fd7zPath() {
     var cands = [];
     try {
@@ -256,21 +295,18 @@ function fdUnzip(fn) {
     }
 
     try {
-        var cp = require('child_process');
         if (sevenZip != null) {
-            // x keeps folder structure, -y answers every prompt, -o has no space before the path.
-            cp.execFile(sevenZip, ['7z', 'x', fn, '-o' + dest, '-y']);
+            // x keeps the folder structure, -y answers prompts, -o takes no space.
             dbg('expanding ' + fn + ' into ' + dest + ' with 7-Zip');
-            fdReport(fn, true, 'expanding into ' + dest + ' (7-Zip)');
+            fdRun(sevenZip, ['7z', 'x', fn, '-o' + dest, '-y'], '7-Zip', fn);
             return;
         }
         var comspec = 'cmd.exe';
         try { comspec = process.env['windir'] + '\\system32\\cmd.exe'; } catch (e) { }
         var ps = "Expand-Archive -LiteralPath '" + fn.replace(/'/g, "''") +
                  "' -DestinationPath '" + dest.replace(/'/g, "''") + "' -Force";
-        cp.execFile(comspec, ['cmd', '/c', 'powershell -NoProfile -NonInteractive -Command "' + ps.replace(/"/g, '\\"') + '"']);
         dbg('expanding ' + fn + ' into ' + dest + ' with Expand-Archive');
-        fdReport(fn, true, 'expanding into ' + dest + ' (Expand-Archive)');
+        fdRun(comspec, ['cmd', '/c', 'powershell -NoProfile -NonInteractive -Command "' + ps.replace(/"/g, '\\"') + '"'], 'Expand-Archive', fn);
     } catch (e) {
         dbg('could not expand ' + fn + ': ' + e);
         fdReport(fn, false, 'expand failed: ' + e);
