@@ -491,6 +491,8 @@ module.exports.filedist = function (parent) {
                    ' devices exceeds the limit of ' + MAX_OPERATIONS + ' entries.' });
             return;
         }
+        obj.debug('PLUGIN', PLUGIN_C, 'bulk add: ' + items.length + ' file(s), unzip flags: ' +
+                  items.map(function (it) { return (it.unzip === true) ? '1' : '0'; }).join(''));
         var cache = {}, added = 0, skipped = 0, failed = 0, firstError = null, i = 0;
         var step = function () {
             if (i >= items.length) {
@@ -568,6 +570,7 @@ module.exports.filedist = function (parent) {
                 }
                 obj.userCanManageNode(user, command.currentNodeId, function (ok) {
                     if (!ok) { obj.debug('PLUGIN', PLUGIN_C, 'Refused addFileMap: no rights on ' + command.currentNodeId); return; }
+                    obj.debug('PLUGIN', PLUGIN_C, 'addFileMap ' + command.cpath + ' unzip=' + (command.unzip === true));
                     var realPath = obj.getServerFilePath(command.spath);
                     if (realPath == null) { return; }
                     var sz = 0;
