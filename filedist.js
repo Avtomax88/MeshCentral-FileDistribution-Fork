@@ -416,6 +416,7 @@ module.exports.filedist = function (parent) {
     var BATCH = 10;      // nodes handled before yielding
     var BATCH_PAUSE = 20; // ms between batches
     var MAX_TARGETS = 1000;
+    var MAX_OPERATIONS = 5000; // files x devices in a single request
 
     // Keeps only the maps whose node this user may manage. A site admin skips the
     // lookups entirely; everyone else resolves each distinct node once.
@@ -439,7 +440,9 @@ module.exports.filedist = function (parent) {
         step();
     };
 
-    obj.bulkAddFileMap = function (user, nodeids, spath, cpath, func) {
+    // rightsCache is optional: when several files go to the same devices, the
+    // node lookups are done once rather than once per file.
+    obj.bulkAddFileMap = function (user, nodeids, spath, cpath, func, rightsCache) {
         if (!Array.isArray(nodeids) || (nodeids.length == 0)) { func({ added: 0, skipped: 0, error: 'No devices were selected.' }); return; }
         if (nodeids.length > MAX_TARGETS) { func({ added: 0, skipped: 0, error: 'Too many devices in one go (limit ' + MAX_TARGETS + ').' }); return; }
         if (!obj.isSafeServerPath(spath) || !obj.isSaneClientPath(cpath)) { func({ added: 0, skipped: 0, error: 'That path could not be used.' }); return; }
@@ -448,9 +451,15 @@ module.exports.filedist = function (parent) {
         var sz = null;
         try { sz = require('fs').statSync(real.fullpath).size; } catch (e) { sz = null; }
 
+        var cache = (rightsCache != null) ? rightsCache : {};
+        var checkRights = function (nid, cb) {
+            if (cache[nid] !== undefined) { cb(cache[nid]); return; }
+            obj.userCanManageNode(user, nid, function (ok) { cache[nid] = ok; cb(ok); });
+        };
+
         var added = 0, skipped = 0, i = 0;
         var one = function (nid, next) {
-            obj.userCanManageNode(user, nid, function (ok) {
+            checkRights(nid, function (ok) {
                 if (!ok) { skipped++; next(); return; }
                 obj.db.findFileForNode(nid, cpath)
                 .then(function (existing) {
@@ -468,6 +477,36 @@ module.exports.filedist = function (parent) {
             one(nid, function () {
                 if ((i % BATCH) == 0) { setTimeout(step, BATCH_PAUSE); } else { step(); }
             });
+        };
+        step();
+    };
+
+    // Several files to the same set of devices. Each file reuses the tested
+    // single-file path; only the rights lookups and the final reply are shared.
+    obj.bulkAddFiles = function (user, nodeids, items, func) {
+        if (!Array.isArray(items) || (items.length == 0)) { func({ added: 0, skipped: 0, error: 'No files were selected.' }); return; }
+        if (!Array.isArray(nodeids) || (nodeids.length == 0)) { func({ added: 0, skipped: 0, error: 'No devices were selected.' }); return; }
+        if ((items.length * nodeids.length) > MAX_OPERATIONS) {
+            func({ added: 0, skipped: 0, error: 'Too much in one go: ' + items.length + ' files on ' + nodeids.length +
+                   ' devices exceeds the limit of ' + MAX_OPERATIONS + ' entries.' });
+            return;
+        }
+        var cache = {}, added = 0, skipped = 0, failed = 0, firstError = null, i = 0;
+        var step = function () {
+            if (i >= items.length) {
+                var res = { added: added, skipped: skipped, files: items.length };
+                if (failed > 0) { res.failedFiles = failed; }
+                if ((added == 0) && (firstError != null)) { res.error = firstError; }
+                func(res);
+                return;
+            }
+            var it = items[i++];
+            obj.bulkAddFileMap(user, nodeids, it.spath, it.cpath, function (r) {
+                if (r.error != null) { failed++; if (firstError == null) firstError = r.error; }
+                added += (r.added | 0);
+                skipped += (r.skipped | 0);
+                setTimeout(step, BATCH_PAUSE);
+            }, cache);
         };
         step();
     };
@@ -592,7 +631,10 @@ module.exports.filedist = function (parent) {
                 break;
             }
             case 'addFileMapBulk': {
-                obj.bulkAddFileMap(user, command.nodeids, command.spath, command.cpath, function (res) {
+                // Newer clients send items[]; a single spath/cpath is still accepted.
+                var items = command.items;
+                if (!Array.isArray(items)) { items = [{ spath: command.spath, cpath: command.cpath }]; }
+                obj.bulkAddFiles(user, command.nodeids, items, function (res) {
                     obj.replyToUser(user, 'bulkResult', { kind: 'add', result: res });
                 });
                 break;
