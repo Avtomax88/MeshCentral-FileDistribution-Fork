@@ -169,6 +169,14 @@ function filterFiles(el) {
     }
 }
 // Splits a My Files link path into the folder part and the file name.
+function fdArchiveKind(p) {
+    var l = String(p || '').toLowerCase();
+    if (/\.zip$/.test(l)) return 'zip';
+    if (/\.7z$/.test(l)) return '7z';
+    if (/\.rar$/.test(l)) return 'rar';
+    return null;
+}
+
 function fdBaseName(linkpath) {
     var p = String(linkpath == null ? '' : linkpath).split('/');
     return p[p.length - 1];
@@ -234,8 +242,10 @@ function goAddEx2(spath) {
     var nodeid = fdNodeId();
     if (nodeid == null) { fdShowErr(T('noDeviceId')); return; }
     fdRememberFolder(folder);
+    var uz = document.getElementById('fdUnzipChk');
     parent.meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'addFileMap',
-        spath: spath, cpath: cpath, currentNodeId: nodeid });
+        spath: spath, cpath: cpath, currentNodeId: nodeid,
+        unzip: ((uz != null) && (uz.checked === true)) });
     fdClose();
 }
 function deleteMap(el) {
