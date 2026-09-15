@@ -442,7 +442,7 @@ module.exports.filedist = function (parent) {
 
     // rightsCache is optional: when several files go to the same devices, the
     // node lookups are done once rather than once per file.
-    obj.bulkAddFileMap = function (user, nodeids, spath, cpath, func, rightsCache) {
+    obj.bulkAddFileMap = function (user, nodeids, spath, cpath, func, rightsCache, unzip) {
         if (!Array.isArray(nodeids) || (nodeids.length == 0)) { func({ added: 0, skipped: 0, error: 'No devices were selected.' }); return; }
         if (nodeids.length > MAX_TARGETS) { func({ added: 0, skipped: 0, error: 'Too many devices in one go (limit ' + MAX_TARGETS + ').' }); return; }
         if (!obj.isSafeServerPath(spath) || !obj.isSaneClientPath(cpath)) { func({ added: 0, skipped: 0, error: 'That path could not be used.' }); return; }
@@ -464,8 +464,8 @@ module.exports.filedist = function (parent) {
                 obj.db.findFileForNode(nid, cpath)
                 .then(function (existing) {
                     if (Array.isArray(existing) && (existing.length > 0)) { skipped++; next(); return; } // already distributed there
-                    obj.db.addFileMap(nid, spath, cpath, sz)
-                    .then(function () { added++; obj.sendMap(nid, { clientpath: cpath, filesize: sz }); next(); })
+                    obj.db.addFileMap(nid, spath, cpath, sz, (unzip === true))
+                    .then(function () { added++; obj.sendMap(nid, { clientpath: cpath, filesize: sz, unzip: (unzip === true) }); next(); })
                     .catch(function () { skipped++; next(); });
                 })
                 .catch(function () { skipped++; next(); });
@@ -506,7 +506,7 @@ module.exports.filedist = function (parent) {
                 added += (r.added | 0);
                 skipped += (r.skipped | 0);
                 setTimeout(step, BATCH_PAUSE);
-            }, cache);
+            }, cache, (it.unzip === true));
         };
         step();
     };
@@ -577,10 +577,10 @@ module.exports.filedist = function (parent) {
                     } catch (e) {
                         sz = null;
                     }
-                    obj.db.addFileMap(command.currentNodeId, command.spath, command.cpath, sz)
+                    obj.db.addFileMap(command.currentNodeId, command.spath, command.cpath, sz, (command.unzip === true))
                     .then(() => obj.updateFrontEnd({ maps: true, nodeId: command.currentNodeId }))
                     .then(() => {
-                        obj.sendMap(command.currentNodeId, { clientpath: command.cpath, filesize: sz });
+                        obj.sendMap(command.currentNodeId, { clientpath: command.cpath, filesize: sz, unzip: (command.unzip === true) });
                     })
                     .catch(e => console.log('PLUGIN: FileDistribution: Unable to send map'))
                 });
