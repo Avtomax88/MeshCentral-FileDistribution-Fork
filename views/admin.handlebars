@@ -46,7 +46,7 @@
     .fdCount { color: #555; margin-left: 8px; }
 
     #fdFileBox { border: 1px solid #d8d8d8; overflow: auto; min-height: 0; flex: 1; }
-    .fdFile { padding: 3px 5px; cursor: pointer; }
+    .fdFile { display: block; padding: 3px 5px; cursor: pointer; }
     .fdFile:hover { background: #eef4fb; }
     .fdFile.sel { background: #dceaf7; font-weight: bold; }
 
@@ -375,22 +375,44 @@ function fdRenderFiles() {
     if (fdFiles.length == 0) { box.innerHTML = '<div class="fdMuted" style="padding:8px;">No files under My Files. Upload one on the Files tab first.</div>'; return; }
     var h = '';
     fdFiles.forEach(function (f) {
-        h += '<div class="fdFile" data-p="' + fdEsc(f.linkpath) + '" onclick="fdPickFile(this);">' + fdEsc(f.nicepath) + '</div>';
+        h += '<label class="fdFile"><input type="checkbox" data-p="' + fdEsc(f.linkpath) + '"' +
+             ((fdPicked.indexOf(f.linkpath) >= 0) ? ' checked' : '') + ' onchange="fdPickFile(this);"> ' +
+             fdEsc(f.nicepath) + '</label>';
     });
     box.innerHTML = h;
 }
-function fdPickFile(el) {
-    var p = el.getAttribute('data-p');
+function fdPickFile(cb) {
+    var p = cb.getAttribute('data-p');
     var at = fdPicked.indexOf(p);
-    if (at >= 0) { fdPicked.splice(at, 1); el.classList.remove('sel'); }
-    else { fdPicked.push(p); el.classList.add('sel'); }
+    if (cb.checked) { if (at < 0) fdPicked.push(p); }
+    else if (at >= 0) { fdPicked.splice(at, 1); }
+    cb.parentNode.classList.toggle('sel', cb.checked);
     fdPreview();
 }
 function fdClearFiles() {
     fdPicked = [];
-    var all = document.querySelectorAll('.fdFile');
-    for (var i = 0; i < all.length; i++) all[i].classList.remove('sel');
+    var all = document.querySelectorAll('#fdFileBox input[type=checkbox]');
+    for (var i = 0; i < all.length; i++) { all[i].checked = false; all[i].parentNode.classList.remove('sel'); }
     fdPreview();
+}
+function fdArchiveKind(p) {
+    var l = String(p || '').toLowerCase();
+    if (/\.zip$/.test(l)) return 'zip';
+    if (/\.7z$/.test(l)) return '7z';
+    if (/\.rar$/.test(l)) return 'rar';
+    return null;
+}
+// True when every selected file is an archive we can offer to expand.
+function fdAllZip() {
+    if (fdPicked.length == 0) return false;
+    for (var i = 0; i < fdPicked.length; i++) { if (fdArchiveKind(fdPicked[i]) == null) return false; }
+    return true;
+}
+// True when anything other than .zip is in the selection, which makes 7-Zip a
+// requirement on the endpoint rather than a nicety.
+function fdNeeds7z() {
+    for (var i = 0; i < fdPicked.length; i++) { if (fdArchiveKind(fdPicked[i]) != 'zip') return true; }
+    return false;
 }
 function fdBaseName(p) { var a = String(p || '').split('/'); return a[a.length - 1]; }
 function fdJoin(folder, name) {
@@ -554,6 +576,7 @@ function fdDistribute() {
     });
     if (items.some(function (it) { return (it.cpath == ''); })) { fdShow('err', T('badFolder')); return; }
 
+    var zipOk = fdAllZip();
     var what = multi ? T('filesSelected', fdPicked.length) : fdEsc(fdBaseName(fdPicked[0]));
     var list = items.slice(0, 8).map(function (it) { return fdEsc(it.cpath); }).join('<br>');
     if (items.length > 8) { list += '<br>' + fdEsc(T('andMore', items.length - 8)); }
@@ -561,8 +584,13 @@ function fdDistribute() {
     fdOpen(T('distributeTitle'),
         T('distributeAsk', what, ids.length) +
         '<div class="fdMono" style="margin-top:8px;">' + list + '</div>' +
+        '<div style="margin-top:10px;"><label><input type="checkbox" id="fdUnzipChk"' + (zipOk ? '' : ' disabled') + '> ' +
+        T('unzipAfter') + '</label></div>' +
+        '<div class="fdMuted" style="margin-top:4px;">' + (zipOk ? (fdNeeds7z() ? T('unzipNote') + ' ' + T('unzipNeeds7z') : T('unzipNote')) : T('unzipOnlyZip')) + '</div>' +
         '<div class="fdMuted" style="margin-top:8px;">' + T('replaceNote') + ' ' + T('distributeNote') + '</div>',
         function () {
+            var unzip = zipOk && document.getElementById('fdUnzipChk').checked;
+            if (unzip) { items.forEach(function (it) { it.unzip = true; }); }
             document.getElementById('fdGo').disabled = true;
             fdHost().meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'addFileMapBulk',
                 nodeids: ids, items: items });
