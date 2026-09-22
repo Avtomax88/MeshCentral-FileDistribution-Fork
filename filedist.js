@@ -30,6 +30,7 @@ module.exports.filedist = function (parent) {
       'bulkResult',
       'uiConfig',
       'tryButton',
+      'watchButton',
       'goPageStart'
     ];
     var PLUGIN_L = 'filedist';
@@ -246,25 +247,40 @@ module.exports.filedist = function (parent) {
             }
         } catch (e) { }
         pluginHandler.filedist._uiCfg = cfg;
-        if (cfg.devicesButton !== true) return;
         pluginHandler.filedist.tryButton(0);
     };
 
     // My Devices may not be on screen yet when the setting arrives, and the user
     // can navigate to it later, so insertion is retried and also re-run on page
     // changes. Nothing here is required for the rest of the plugin to work.
+    // MeshCentral rebuilds the My Devices toolbar when the view, filter or page
+    // changes, which throws our button away with the old markup. So insertion is
+    // driven by whether the button is actually on the page, not by a one-shot
+    // flag, and a watcher puts it back whenever the toolbar is rebuilt.
     obj.tryButton = function (attempt) {
-        if (pluginHandler.filedist._btnDone === true) return;
-        var cfg = pluginHandler.filedist._uiCfg;
-        if ((cfg == null) || (cfg.devicesButton !== true)) return;
+        var P = pluginHandler.filedist;
+        var cfg = P._uiCfg;
+        var existing = document.getElementById('fdDevicesBtn');
+
+        // Turned off: take it away if it is there.
+        if ((cfg == null) || (cfg.devicesButton !== true)) {
+            if (existing != null) { try { existing.parentNode.removeChild(existing); } catch (e) { } }
+            return;
+        }
+
+        var ga = document.getElementById('GroupActionButton');
+        if (ga == null) {
+            // Not on My Devices right now. The watcher below will call again when
+            // the toolbar appears, so only a few early retries are needed.
+            if ((attempt | 0) < 5) { setTimeout(function () { P.tryButton((attempt | 0) + 1); }, 400); }
+            return;
+        }
+
+        // Already in place next to the current toolbar button: nothing to do.
+        if ((existing != null) && (existing.previousSibling === ga)) return;
+        if (existing != null) { try { existing.parentNode.removeChild(existing); } catch (e) { } }
+
         try {
-            var ga = document.getElementById('GroupActionButton');
-            if (ga == null) {
-                if (attempt < 20) { setTimeout(function () { pluginHandler.filedist.tryButton(attempt + 1); }, 500); }
-                return;
-            }
-            if (document.getElementById('fdDevicesBtn') != null) { pluginHandler.filedist._btnDone = true; return; }
-            pluginHandler.filedist._btnDone = true;
             var b = document.createElement('button');
             b.id = 'fdDevicesBtn'; b.type = 'button';
             b.className = (typeof showModal === 'function') ? (ga.className + ' fdDevBtnBs').replace('btn-primary', 'btn-secondary') : 'fdDevBtn';
@@ -291,8 +307,34 @@ module.exports.filedist = function (parent) {
                 window.open(url, '_blank');
             };
             ga.parentNode.insertBefore(b, ga.nextSibling);
-            new MutationObserver(function () { b.disabled = ga.disabled; }).observe(ga, { attributes: true, attributeFilter: ['disabled'] });
+
+            // Follow the enabled state of this particular toolbar button. A rebuilt
+            // toolbar has a new button, so the old observer is dropped.
+            if (P._gaObs != null) { try { P._gaObs.disconnect(); } catch (e) { } }
+            P._gaObs = new MutationObserver(function () { b.disabled = ga.disabled; });
+            P._gaObs.observe(ga, { attributes: true, attributeFilter: ['disabled'] });
         } catch (e) { }
+
+        P.watchButton();
+    };
+
+    // One page-wide watcher, set up once. It is cheap: each change only costs a
+    // lookup by id, and bursts of changes are folded into a single check.
+    obj.watchButton = function () {
+        var P = pluginHandler.filedist;
+        if ((P._pageObs != null) || (typeof MutationObserver != 'function') || (document.body == null)) return;
+        P._pageObs = new MutationObserver(function () {
+            if (P._pageTimer != null) return;
+            P._pageTimer = setTimeout(function () {
+                P._pageTimer = null;
+                var cfg = P._uiCfg;
+                if ((cfg == null) || (cfg.devicesButton !== true)) return;
+                var ga = document.getElementById('GroupActionButton');
+                var b = document.getElementById('fdDevicesBtn');
+                if ((ga != null) && ((b == null) || (b.previousSibling !== ga))) { P.tryButton(0); }
+            }, 150);
+        });
+        P._pageObs.observe(document.body, { childList: true, subtree: true });
     };
 
     obj.goPageStart = function () {
