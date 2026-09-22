@@ -31,6 +31,7 @@ module.exports.filedist = function (parent) {
       'uiConfig',
       'tryButton',
       'watchButton',
+      'requestUiConfig',
       'goPageStart'
     ];
     var PLUGIN_L = 'filedist';
@@ -231,8 +232,26 @@ module.exports.filedist = function (parent) {
     // Runs once when the page first loads. Asks the server whether the My Devices
     // button is turned on; uiConfig() does the actual injection once the answer
     // arrives, since the toolbar the button attaches to may not exist yet here.
+    // On a fresh page load the server connection may not be ready yet, so a
+    // request sent here can be lost and the button would never appear. Quick
+    // Commands avoids the problem by inserting its button at once, with no round
+    // trip. Here the last known setting is kept in the browser and used
+    // straight away; the server's answer then confirms or corrects it, and the
+    // request is repeated until that answer arrives.
     obj.onWebUIStartupEnd = function () {
+        var P = pluginHandler.filedist;
+        try {
+            var cached = localStorage.getItem('fd_ui_cfg');
+            if (cached) { P._uiCfg = JSON.parse(cached); P.tryButton(0); }
+        } catch (e) { }
+        P.requestUiConfig(0);
+    };
+
+    obj.requestUiConfig = function (attempt) {
+        var P = pluginHandler.filedist;
+        if (P._uiCfgGot === true) return;
         try { meshserver.send({ action: 'plugin', plugin: 'filedist', pluginaction: 'getUiConfig' }); } catch (e) { }
+        if ((attempt | 0) < 10) { setTimeout(function () { P.requestUiConfig((attempt | 0) + 1); }, 1500); }
     };
 
     obj.uiConfig = function (message) {
@@ -247,6 +266,8 @@ module.exports.filedist = function (parent) {
             }
         } catch (e) { }
         pluginHandler.filedist._uiCfg = cfg;
+        pluginHandler.filedist._uiCfgGot = true;
+        try { localStorage.setItem('fd_ui_cfg', JSON.stringify({ devicesButton: (cfg.devicesButton === true) })); } catch (e) { }
         pluginHandler.filedist.tryButton(0);
     };
 
