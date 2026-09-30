@@ -14,7 +14,7 @@ var debug_flag = false;
 var periodicFileIntegrityTimer = null;
 var fileMaps = {};
 var unzipMap = {};   // clientpath -> true when the archive should be expanded after it lands
-var FD_MOD_VER = '0.10.5'; // reported to the server so a stale agent core is obvious
+var FD_MOD_VER = '0.11.0'; // reported to the server so a stale agent core is obvious
 
 var fs = require('fs');
 var fileBuffer = {};
@@ -66,6 +66,9 @@ function consoleaction(args, rights, sessionid, parent) {
             dbg('adding map '+ JSON.stringify(args.map));
             var m = args.map;
             saveFileVerification({ clientpath: m.clientpath, filesize: m.filesize, unzip: (m.unzip === true) });
+            // Prepare the folder now, not when the first chunk lands: if only the
+            // shell can create it, this gives it the server round trip to finish.
+            try { fdEnsureDir(m.clientpath); } catch (e) { dbg('ensure folder threw for ' + m.clientpath + ': ' + e); }
             fetchFile(m.clientpath);
         break;
         case 'removeMap':
@@ -161,6 +164,12 @@ function consoleaction(args, rights, sessionid, parent) {
                     return;
                 }
                 if (fileBuffer[fn] == null) {
+                    if (!fdEnsureDir(fn)) {
+                        dbg('folder for ' + fn + ' is still missing, cannot write');
+                        fdReport(fn, false, 'destination folder missing');
+                        delete fetching[fn];
+                        return;
+                    }
                     // 'wb' truncates AND opens in binary mode. The 'b' is not a Node
                     // flag, but the agent's file layer honours it, and without it every
                     // 0x0A byte is written as 0x0D 0x0A - which silently inflates and
@@ -241,6 +250,72 @@ function fdRun(exe, args, label, fn) {
         fdReport(fn, false, label + ' failed to start: ' + e);
         return false;
     }
+}
+
+// The destination folder may not exist on the endpoint. Creating it has to be
+// synchronous, because the first chunk of the file arrives right after: the
+// shell fallback is only a last resort and is fired early, when the map is
+// received, so it has the round trip to the server to finish.
+function fdDirLevels(fn) {
+    fn = String(fn || '');
+    var sep = (fn.indexOf('\\') != -1) ? '\\' : '/';
+    var cut = fn.lastIndexOf(sep);
+    if (cut <= 0) return { dir: null, steps: [] };
+    var dir = fn.substring(0, cut);
+    var parts = dir.split(sep), acc = '', steps = [];
+    // \\server\share already exists; only deeper levels can be created.
+    if ((sep == '\\') && (dir.substring(0, 2) == '\\\\')) {
+        if (parts.length < 5) return { dir: dir, steps: [] };
+        acc = '\\\\' + parts[2] + '\\' + parts[3];
+        for (var j = 4; j < parts.length; j++) { acc = acc + sep + parts[j]; steps.push(acc); }
+        return { dir: dir, steps: steps };
+    }
+    for (var i = 0; i < parts.length; i++) {
+        if (i === 0) { acc = (parts[0] === '') ? sep : parts[0]; }
+        else { acc = (acc === sep) ? (sep + parts[i]) : (acc + sep + parts[i]); }
+        if (acc === sep) continue;                 // POSIX root
+        if (/^[A-Za-z]:$/.test(acc)) continue;     // bare drive letter
+        steps.push(acc);
+    }
+    return { dir: dir, steps: steps };
+}
+
+function fdDirExists(d) {
+    try { return (fs.statSync(d) != null); } catch (e) { return false; }
+}
+
+// Returns true when the folder is there (or was created), false when it is not
+// and only an asynchronous attempt could be made.
+function fdEnsureDir(fn) {
+    var lv = fdDirLevels(fn);
+    if (lv.dir == null) return true;              // file in the working directory
+    if (fdDirExists(lv.dir)) return true;
+    if (lv.steps.length == 0) return false;       // nothing we may create
+
+    if (typeof fs.mkdirSync == 'function') {
+        for (var i = 0; i < lv.steps.length; i++) {
+            if (fdDirExists(lv.steps[i])) continue;
+            try { fs.mkdirSync(lv.steps[i]); }
+            catch (e) { dbg('mkdirSync failed for ' + lv.steps[i] + ': ' + e); break; }
+        }
+        if (fdDirExists(lv.dir)) { dbg('created folder ' + lv.dir); return true; }
+    } else {
+        dbg('no mkdirSync in this agent, falling back to the shell');
+    }
+
+    // Last resort. cmd's mkdir creates intermediate levels by itself, as does
+    // mkdir -p. This runs asynchronously, so the caller must not assume the
+    // folder is ready the moment it returns.
+    var win = false;
+    try { win = (require('os').platform() == 'win32'); } catch (e) { try { win = (process.platform == 'win32'); } catch (e2) { } }
+    if (win) {
+        var comspec = 'cmd.exe';
+        try { comspec = process.env['windir'] + '\\system32\\cmd.exe'; } catch (e) { }
+        fdRun(comspec, ['cmd', '/c', 'mkdir "' + lv.dir + '"'], 'mkdir', fn);
+    } else {
+        fdRun('/bin/sh', ['sh', '-c', "mkdir -p '" + lv.dir.replace(/'/g, "'\\''") + "'"], 'mkdir', fn);
+    }
+    return fdDirExists(lv.dir);
 }
 
 function fd7zPath() {
