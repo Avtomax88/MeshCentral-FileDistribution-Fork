@@ -47,6 +47,10 @@
 
     #fdFileBox { border: 1px solid #d8d8d8; overflow: auto; min-height: 0; flex: 1; }
     .fdFile { display: block; padding: 3px 5px; cursor: pointer; }
+    .fdDir { padding: 3px 5px; white-space: nowrap; }
+    .fdTw { display: inline-block; width: 12px; cursor: pointer; color: #666; user-select: none; }
+    .fdFolder { cursor: pointer; }
+    .fdFolder:hover { text-decoration: underline; }
     .fdFile:hover { background: #eef4fb; }
     .fdFile.sel { background: #dceaf7; font-weight: bold; }
 
@@ -104,7 +108,13 @@
     <div class="fdRow fdGrow">
       <div class="fdCol" style="flex:2;display:flex;flex-direction:column;">
         <label class="fdFixed" data-i18n="fileFromMyFiles">File from My Files</label>
-        <div id="fdFileBox"></div>\n        <div class="fdMuted" style="margin-top:4px;"><span id="fdFileCount"></span> <a href="#" onclick="fdClearFiles();return false;" data-i18n="clearFiles">Clear selection</a></div>
+        <div id="fdFileBox"></div>
+        <div class="fdMuted" style="margin-top:4px;">
+          <span id="fdFileCount"></span>
+          <a href="#" onclick="fdExpandAll(true);return false;" data-i18n="expandAll">Expand all</a> ·
+          <a href="#" onclick="fdExpandAll(false);return false;" data-i18n="collapseAll">Collapse all</a> ·
+          <a href="#" onclick="fdClearFiles();return false;" data-i18n="clearFiles">Clear selection</a>
+        </div>
       </div>
       <div class="fdCol">
         <label data-i18n="folderOnDevices">Folder on the devices</label>
@@ -381,31 +391,144 @@ function fdReadFiles() {
     } catch (e) { fdFiles = []; }
 }
 
+// My Files is a tree, and a flat list of full paths hides that. The paths are
+// folded back into folders here; ticking a folder ticks everything inside it.
+function fdBuildTree(files) {
+    var root = { name: '', dirs: [], dirIndex: {}, files: [], id: 'r' };
+    var seq = 0;
+    files.forEach(function (f) {
+        var parts = String(f.nicepath).split('/');
+        var leaf = parts.pop();
+        var node = root;
+        for (var i = 0; i < parts.length; i++) {
+            var key = parts[i];
+            if (node.dirIndex[key] == null) {
+                var d = { name: key, dirs: [], dirIndex: {}, files: [], id: 'd' + (++seq) };
+                node.dirIndex[key] = d;
+                node.dirs.push(d);
+            }
+            node = node.dirIndex[key];
+        }
+        node.files.push({ name: leaf, linkpath: f.linkpath });
+    });
+    var sortNode = function (n) {
+        n.dirs.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+        n.files.sort(function (a, b) { return String(a.name).localeCompare(String(b.name)); });
+        n.dirs.forEach(sortNode);
+    };
+    sortNode(root);
+    return root;
+}
+
+// Every file path under a folder, however deep.
+function fdDirFiles(node) {
+    var out = node.files.map(function (f) { return f.linkpath; });
+    node.dirs.forEach(function (d) { out = out.concat(fdDirFiles(d)); });
+    return out;
+}
+
+function fdFindDir(node, id) {
+    if (node.id == id) return node;
+    for (var i = 0; i < node.dirs.length; i++) {
+        var r = fdFindDir(node.dirs[i], id);
+        if (r != null) return r;
+    }
+    return null;
+}
+
 function fdRenderFiles() {
     var box = document.getElementById('fdFileBox');
-    if (fdFiles.length == 0) { box.innerHTML = '<div class="fdMuted" style="padding:8px;">No files under My Files. Upload one on the Files tab first.</div>'; return; }
+    if (fdFiles.length == 0) {
+        box.innerHTML = '<div class="fdMuted" style="padding:8px;">' + (T ? T('noFilesFound') : 'No files under My Files.') + '</div>';
+        return;
+    }
+    window.fdTree = fdBuildTree(fdFiles);
+    if (window.fdOpenDirs == null) { window.fdOpenDirs = {}; }   // collapsed unless opened
     var h = '';
-    fdFiles.forEach(function (f) {
-        h += '<label class="fdFile"><input type="checkbox" data-p="' + fdEsc(f.linkpath) + '"' +
-             ((fdPicked.indexOf(f.linkpath) >= 0) ? ' checked' : '') + ' onchange="fdPickFile(this);"> ' +
-             fdEsc(f.nicepath) + '</label>';
-    });
+    var draw = function (node, depth) {
+        node.dirs.forEach(function (d) {
+            var open = (window.fdOpenDirs[d.id] === true);
+            h += '<div class="fdDir" style="padding-left:' + (depth * 16) + 'px">' +
+                 '<span class="fdTw" onclick="fdToggleDir(\'' + d.id + '\');">' + (open ? '▾' : '▸') + '</span>' +
+                 '<input type="checkbox" data-dir="' + d.id + '" onchange="fdPickDir(this);"> ' +
+                 '<span class="fdFolder" onclick="fdToggleDir(\'' + d.id + '\');">\u{1F4C1} ' + fdEsc(d.name) + '</span>' +
+                 '<span class="fdMuted"> (' + fdDirFiles(d).length + ')</span></div>';
+            if (open) { draw(d, depth + 1); }
+        });
+        node.files.forEach(function (f) {
+            h += '<label class="fdFile" style="padding-left:' + ((depth * 16) + 18) + 'px">' +
+                 '<input type="checkbox" data-p="' + fdEsc(f.linkpath) + '"' +
+                 ((fdPicked.indexOf(f.linkpath) >= 0) ? ' checked' : '') + ' onchange="fdPickFile(this);"> ' +
+                 fdEsc(f.name) + '</label>';
+        });
+    };
+    draw(window.fdTree, 0);
     box.innerHTML = h;
+    fdSyncDirBoxes();
 }
+
+function fdToggleDir(id) {
+    if (window.fdOpenDirs == null) window.fdOpenDirs = {};
+    window.fdOpenDirs[id] = (window.fdOpenDirs[id] !== true);
+    fdRenderFiles();
+}
+
+function fdExpandAll(on) {
+    if (window.fdTree == null) return;
+    window.fdOpenDirs = {};
+    if (on) {
+        var walk = function (n) { n.dirs.forEach(function (d) { window.fdOpenDirs[d.id] = true; walk(d); }); };
+        walk(window.fdTree);
+    }
+    fdRenderFiles();
+}
+
+// A folder's box reflects what is inside it: ticked when everything under it is
+// selected, partially ticked when only some of it is.
+function fdSyncDirBoxes() {
+    if (window.fdTree == null) return;
+    var boxes = document.querySelectorAll('#fdFileBox input[data-dir]');
+    for (var i = 0; i < boxes.length; i++) {
+        var d = fdFindDir(window.fdTree, boxes[i].getAttribute('data-dir'));
+        if (d == null) continue;
+        var all = fdDirFiles(d), picked = 0;
+        all.forEach(function (lp) { if (fdPicked.indexOf(lp) >= 0) picked++; });
+        boxes[i].checked = ((all.length > 0) && (picked == all.length));
+        boxes[i].indeterminate = ((picked > 0) && (picked < all.length));
+    }
+}
+
+function fdPickDir(cb) {
+    var d = fdFindDir(window.fdTree, cb.getAttribute('data-dir'));
+    if (d == null) return;
+    var all = fdDirFiles(d);
+    if (cb.checked) {
+        all.forEach(function (lp) { if (fdPicked.indexOf(lp) < 0) fdPicked.push(lp); });
+    } else {
+        all.forEach(function (lp) { var at = fdPicked.indexOf(lp); if (at >= 0) fdPicked.splice(at, 1); });
+    }
+    // Boxes for files inside a collapsed folder are not on the page, so the list
+    // is redrawn rather than nudged item by item.
+    fdRenderFiles();
+    fdPreview();
+}
+
 function fdPickFile(cb) {
     var p = cb.getAttribute('data-p');
     var at = fdPicked.indexOf(p);
     if (cb.checked) { if (at < 0) fdPicked.push(p); }
     else if (at >= 0) { fdPicked.splice(at, 1); }
     cb.parentNode.classList.toggle('sel', cb.checked);
+    fdSyncDirBoxes();
     fdPreview();
 }
+
 function fdClearFiles() {
     fdPicked = [];
-    var all = document.querySelectorAll('#fdFileBox input[type=checkbox]');
-    for (var i = 0; i < all.length; i++) { all[i].checked = false; all[i].parentNode.classList.remove('sel'); }
+    fdRenderFiles();
     fdPreview();
 }
+
 function fdArchiveKind(p) {
     var l = String(p || '').toLowerCase();
     if (/\.zip$/.test(l)) return 'zip';
