@@ -35,7 +35,7 @@ module.exports.CreateDB = function(meshserver) {
             ).sort(
                 { serverpath: 1, clientpath: 1 }
             ).project(
-                { serverpath: 1, clientpath: 1, filesize: 1, unzip: 1 }
+                { serverpath: 1, clientpath: 1, filesize: 1, unzip: 1, state: 1, stateInfo: 1, stateTime: 1 }
             ).toArray();
         };
         obj.findFileForNode = function(node, cpath) {
@@ -55,13 +55,21 @@ module.exports.CreateDB = function(meshserver) {
                 serverpath: spath,
                 clientpath: cpath,
                 filesize: filesize,
-                unzip: (unzip === true)
+                unzip: (unzip === true),
+                state: 'pending',
+                stateTime: Date.now()
             });
         };
         obj.getMapsByServerPath = function(serverpath) {
             return obj.fdFile.find(
                 { type: 'map', serverpath: serverpath }
             ).toArray();
+        };
+        obj.setMapState = function(node, cpath, state, info) {
+            return obj.fdFile.updateMany(
+                { type: 'map', node: node, clientpath: cpath },
+                { state: state, stateInfo: info, stateTime: Date.now() }
+            );
         };
         obj.getNodesForServerPath = function(serverpath, nodeScope) {
             if (nodeScope == null || !Array.isArray(nodeScope)) {
