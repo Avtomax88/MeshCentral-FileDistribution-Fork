@@ -814,8 +814,15 @@ module.exports.filedist = function (parent) {
                           ': ' + ((command.ok === true) ? 'done' : 'refused') + ' (' + command.detail +
                           ', agent module ' + (command.ver || 'pre-0.5.2') + ')');
                 if ((command.state == 'delivered') || (command.state == 'failed')) {
-                    obj.db.setMapState(myparent.dbNodeKey, command.clientpath, command.state, String(command.detail || ''))
-                    .catch(function () { });
+                    // A driver can reject a bad call by throwing rather than by
+                    // returning a rejected promise, and then .catch never gets a
+                    // chance. Recording a state must never disturb anything else.
+                    try {
+                        obj.db.setMapState(myparent.dbNodeKey, command.clientpath, command.state, String(command.detail || ''))
+                        .catch(function () { });
+                    } catch (e) {
+                        obj.debug('PLUGIN', PLUGIN_C, 'Could not record state for ' + command.clientpath + ': ' + e);
+                    }
                 }
                 break;
             }
