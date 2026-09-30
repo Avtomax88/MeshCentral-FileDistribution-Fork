@@ -64,6 +64,17 @@
     .fdNodeChips { margin-top: 4px; }
     .fdChip { display: inline-block; border: 1px solid #dcdcdc; border-radius: 9px;
               padding: 0 3px 0 7px; margin: 2px 3px 0 0; background: #fafafa; }
+    /* Delivery state of one device, confirmed by its agent. */
+    .fdChip.st-delivered { background: #eaf6ea; border-color: #a6d2a6; }
+    .fdChip.st-sending   { background: #eaf1fb; border-color: #a9c6ea; }
+    .fdChip.st-failed    { background: #fdeeee; border-color: #e0b4b4; }
+    .fdChip.st-pending   { background: #fafafa; }
+    .fdDot2 { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
+    .st-delivered .fdDot2 { background: #3c9a3c; }
+    .st-sending   .fdDot2 { background: #2f6fd0; }
+    .st-failed    .fdDot2 { background: #b03030; }
+    .st-pending   .fdDot2 { background: #bdbdbd; }
+    .fdLegend { color: #666; margin-left: 10px; font-weight: normal; }
     .fdChip .x { cursor: pointer; color: #b03030; font-weight: bold; margin-left: 5px; padding: 0 2px; }
     .fdChip .x:hover { text-decoration: underline; }
 
@@ -610,34 +621,62 @@ function fdFileNice(linkpath) {
     for (var i = 0; i < fdFiles.length; i++) { if (fdFiles[i].linkpath == linkpath) return fdFiles[i].nicepath; }
     return linkpath;
 }
+function fdState(m) {
+    var st = (m && m.state) ? String(m.state) : 'pending';
+    return (['delivered', 'sending', 'failed', 'pending'].indexOf(st) >= 0) ? st : 'pending';
+}
+
 function fdOnOverview(ev) {
     fdOverview = (ev && ev.maps) ? ev.maps : [];
     var groups = {};
     fdOverview.forEach(function (m) {
         var key = m.serverpath + '\u0000' + m.clientpath;
-        if (groups[key] == null) groups[key] = { serverpath: m.serverpath, clientpath: m.clientpath, ids: [], nodes: [] };
+        if (groups[key] == null) groups[key] = { serverpath: m.serverpath, clientpath: m.clientpath, ids: [], nodes: [], states: [], infos: [] };
         groups[key].ids.push(m._id);
         groups[key].nodes.push(m.node);
+        groups[key].states.push(fdState(m));
+        groups[key].infos.push((m.stateInfo != null) ? String(m.stateInfo) : '');
     });
     var keys = Object.keys(groups).sort();
     var body = document.getElementById('fdOvBody');
     body.innerHTML = '';
+    var waiting = 0;
     keys.forEach(function (k, idx) {
         var g = groups[k];
+        var done = 0;
         var chips = g.nodes.map(function (n, j) {
-            return '<span class="fdChip">' + fdEsc(fdNodeName(n)) +
-                   '<span class="x" title="Remove just this device" onclick="fdRemoveOne(' + idx + ',' + j + ');">\u00d7</span></span>';
+            var st = g.states[j];
+            if (st == 'delivered') { done++; } else { waiting++; }
+            var tip = T('state_' + st) + (g.infos[j] ? (' \u2014 ' + g.infos[j]) : '');
+            return '<span class="fdChip st-' + st + '" title="' + fdEsc(tip) + '">' +
+                   '<span class="fdDot2"></span>' + fdEsc(fdNodeName(n)) +
+                   '<span class="x" title="' + fdEsc(T('removeOne')) + '" onclick="fdRemoveOne(' + idx + ',' + j + ');">\u00d7</span></span>';
         }).join('');
         var tr = body.insertRow(-1);
         tr.innerHTML =
             '<td>' + fdEsc(fdFileNice(g.serverpath)) + '</td>' +
             '<td class="fdMono">' + fdEsc(g.clientpath) + '</td>' +
-            '<td>' + T('deviceCount', g.nodes.length) + '<div class="fdNodeChips">' + chips + '</div></td>' +
+            '<td>' + T('deliveredOf', done, g.nodes.length) + '<div class="fdNodeChips">' + chips + '</div></td>' +
             '<td><button onclick="fdRemoveGroup(' + idx + ');">' + T('removeAll') + '</button></td>';
     });
     window.fdGroups = keys.map(function (k) { return groups[k]; });
     document.getElementById('fdOvEmpty').style.display = (keys.length == 0) ? '' : 'none';
+    fdAutoRefresh(waiting > 0);
 }
+
+// While anything is still on its way, the overview refreshes itself. It stops on
+// its own once every device has confirmed, so an idle page costs nothing.
+function fdAutoRefresh(on) {
+    if (on) {
+        if (window.fdOvTimer == null) {
+            window.fdOvTimer = setInterval(function () { fdLoadOverview(); }, 5000);
+        }
+    } else if (window.fdOvTimer != null) {
+        clearInterval(window.fdOvTimer);
+        window.fdOvTimer = null;
+    }
+}
+
 function fdRemoveGroup(idx) {
     var g = window.fdGroups[idx];
     if (g == null) return;
