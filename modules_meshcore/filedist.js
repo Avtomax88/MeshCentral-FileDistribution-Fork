@@ -14,7 +14,7 @@ var debug_flag = false;
 var periodicFileIntegrityTimer = null;
 var fileMaps = {};
 var unzipMap = {};   // clientpath -> true when the archive should be expanded after it lands
-var FD_MOD_VER = '0.11.0'; // reported to the server so a stale agent core is obvious
+var FD_MOD_VER = '0.13.0'; // reported to the server so a stale agent core is obvious
 
 var fs = require('fs');
 var fileBuffer = {};
@@ -143,13 +143,14 @@ function consoleaction(args, rights, sessionid, parent) {
                         try { got = fs.statSync(fn).size; } catch (e) { got = null; }
                         if (got == null) {
                             dbg('transfer of ' + fn + ' finished but the file is missing');
-                            fdReport(fn, false, 'missing after transfer');
+                            fdReport(fn, false, 'missing after transfer', 'failed');
                         } else if (got !== want) {
                             dbg('transfer of ' + fn + ' ended at ' + got + ' bytes, expected ' + want + '; discarding');
                             fdDeleteFile(fn);
-                            fdReport(fn, false, 'incomplete transfer (' + got + ' of ' + want + ')');
+                            fdReport(fn, false, 'incomplete transfer (' + got + ' of ' + want + ')', 'failed');
                         } else {
                             dbg('transfer of ' + fn + ' complete, ' + got + ' bytes');
+                            fdReport(fn, true, got + ' bytes', 'delivered');
                             // Called directly rather than from a timer: an unreferenced
                             // timer can be collected before it fires in this runtime,
                             // which is why nothing happened here before. The file is
@@ -166,7 +167,7 @@ function consoleaction(args, rights, sessionid, parent) {
                 if (fileBuffer[fn] == null) {
                     if (!fdEnsureDir(fn)) {
                         dbg('folder for ' + fn + ' is still missing, cannot write');
-                        fdReport(fn, false, 'destination folder missing');
+                        fdReport(fn, false, 'destination folder missing', 'failed');
                         delete fetching[fn];
                         return;
                     }
@@ -388,10 +389,11 @@ function fdUnzip(fn) {
     }
 }
 
-function fdReport(clientpath, ok, detail) {
+function fdReport(clientpath, ok, detail, state) {
     try {
         mesh.SendCommand({ action: 'plugin', plugin: 'filedist', pluginaction: 'removeResult',
-                           clientpath: clientpath, ok: (ok === true), detail: String(detail), ver: FD_MOD_VER });
+                           clientpath: clientpath, ok: (ok === true), detail: String(detail),
+                           state: (state || null), ver: FD_MOD_VER });
     } catch (e) { }
 }
 
@@ -455,7 +457,10 @@ function verifyFile(fn, sz) {
     }
     try {
         if (z.size == sz) {
-            dbg('verified'); // ok, do nothing
+            dbg('verified');
+            // Confirms to the server that the file is still in place, which also
+            // fills in the state of distributions made before this was recorded.
+            fdReport(fn, true, 'verified', 'delivered');
         } else {
             dbg('size not right, get again'); // get latest file
             fetchFile(fn);
