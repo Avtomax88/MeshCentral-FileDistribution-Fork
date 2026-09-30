@@ -509,11 +509,15 @@ module.exports.filedist = function (parent) {
             if (finished) return;
             finished = true;
             try { fs.closeSync(fd); } catch (e) { }
-            if (why != null) { obj.debug('PLUGIN', PLUGIN_C, 'Transfer of ' + job.clientpath + ' to ' + job.comp + ' stopped: ' + why); }
+            if (why != null) {
+                obj.debug('PLUGIN', PLUGIN_C, 'Transfer of ' + job.clientpath + ' to ' + job.comp + ' stopped: ' + why);
+                try { obj.db.setMapState(job.comp, job.clientpath, 'failed', why).catch(function () { }); } catch (e) { }
+            }
             done();
         };
         var sent = 0;
         obj.debug('PLUGIN', PLUGIN_C, 'Sending ' + job.clientpath + ' to ' + job.comp);
+        try { obj.db.setMapState(job.comp, job.clientpath, 'sending', '').catch(function () { }); } catch (e) { }
 
         var step = function () {
             if (finished) return;
@@ -802,13 +806,17 @@ module.exports.filedist = function (parent) {
                 break;
             }
             case 'removeResult': {
-                // Sent by an agent after a delete attempt. Logged rather than
-                // silently dropped, so a refusal can be traced without turning on
-                // debugging inside the agent itself.
+                // Sent by an agent after a transfer, a verification or a delete
+                // attempt. Logged, and when it carries a state, recorded against
+                // the distribution so the overview can show it.
                 if (myparent.dbNodeKey == null) return;
-                obj.debug('PLUGIN', PLUGIN_C, 'Delete on ' + myparent.dbNodeKey + ' for ' + command.clientpath +
+                obj.debug('PLUGIN', PLUGIN_C, 'Agent ' + myparent.dbNodeKey + ' on ' + command.clientpath +
                           ': ' + ((command.ok === true) ? 'done' : 'refused') + ' (' + command.detail +
                           ', agent module ' + (command.ver || 'pre-0.5.2') + ')');
+                if ((command.state == 'delivered') || (command.state == 'failed')) {
+                    obj.db.setMapState(myparent.dbNodeKey, command.clientpath, command.state, String(command.detail || ''))
+                    .catch(function () { });
+                }
                 break;
             }
             case 'getUiConfig': {
