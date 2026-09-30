@@ -52,6 +52,11 @@ var FD_STR = {
         removeAll: 'Remove all',
         removeOne: 'Remove just this device',
         deviceCount: '{0} device(s)',
+        deliveredOf: '{0} of {1} delivered',
+        state_delivered: 'Delivered and verified on the device',
+        state_sending: 'Being sent now',
+        state_failed: 'Did not arrive',
+        state_pending: 'Waiting to be sent',
         andMore: '+{0} more',
         nothingYet: 'Nothing is being distributed yet.',
 
@@ -161,6 +166,11 @@ var FD_STR = {
         removeAll: 'Снять со всех',
         removeOne: 'Снять только с этого устройства',
         deviceCount: 'устройств: {0}',
+        deliveredOf: 'доставлено {0} из {1}',
+        state_delivered: 'Доставлен и подтверждён устройством',
+        state_sending: 'Передаётся сейчас',
+        state_failed: 'Не доставлен',
+        state_pending: 'Ожидает отправки',
         andMore: 'и ещё {0}',
         nothingYet: 'Раздач пока нет.',
 
