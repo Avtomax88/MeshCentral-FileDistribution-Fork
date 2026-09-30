@@ -66,7 +66,9 @@ module.exports.CreateDB = function(meshserver) {
             ).toArray();
         };
         obj.setMapState = function(node, cpath, state, info) {
-            return obj.fdFile.updateMany(
+            // Goes through obj.updateMany, which wraps the fields in $set. Calling
+            // the driver directly with a plain object is rejected by MongoDB.
+            return obj.updateMany(
                 { type: 'map', node: node, clientpath: cpath },
                 { state: state, stateInfo: info, stateTime: Date.now() }
             );
