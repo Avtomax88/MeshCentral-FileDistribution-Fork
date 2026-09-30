@@ -394,8 +394,9 @@ function fdReadFiles() {
 // My Files is a tree, and a flat list of full paths hides that. The paths are
 // folded back into folders here; ticking a folder ticks everything inside it.
 function fdBuildTree(files) {
-    var root = { name: '', dirs: [], dirIndex: {}, files: [], id: 'r' };
-    var seq = 0;
+    // The key is the folder's own path: stable when files are added or removed,
+    // which a running number is not, so remembered folders still match later.
+    var root = { name: '', dirs: [], dirIndex: {}, files: [], key: '' };
     files.forEach(function (f) {
         var parts = String(f.nicepath).split('/');
         var leaf = parts.pop();
@@ -403,7 +404,8 @@ function fdBuildTree(files) {
         for (var i = 0; i < parts.length; i++) {
             var key = parts[i];
             if (node.dirIndex[key] == null) {
-                var d = { name: key, dirs: [], dirIndex: {}, files: [], id: 'd' + (++seq) };
+                var d = { name: key, dirs: [], dirIndex: {}, files: [],
+                          key: (node.key == '') ? key : (node.key + '/' + key) };
                 node.dirIndex[key] = d;
                 node.dirs.push(d);
             }
@@ -427,10 +429,10 @@ function fdDirFiles(node) {
     return out;
 }
 
-function fdFindDir(node, id) {
-    if (node.id == id) return node;
+function fdFindDir(node, key) {
+    if (node.key === key) return node;
     for (var i = 0; i < node.dirs.length; i++) {
-        var r = fdFindDir(node.dirs[i], id);
+        var r = fdFindDir(node.dirs[i], key);
         if (r != null) return r;
     }
     return null;
@@ -443,15 +445,18 @@ function fdRenderFiles() {
         return;
     }
     window.fdTree = fdBuildTree(fdFiles);
-    if (window.fdOpenDirs == null) { window.fdOpenDirs = {}; }   // collapsed unless opened
+    if (window.fdOpenDirs == null) { fdLoadOpenDirs(); }
     var h = '';
     var draw = function (node, depth) {
         node.dirs.forEach(function (d) {
-            var open = (window.fdOpenDirs[d.id] === true);
+            var open = (window.fdOpenDirs[d.key] === true);
+            // The key is a folder path and may contain quotes, so it travels in an
+            // attribute rather than inside the handler call.
+            var kk = fdEsc(d.key);
             h += '<div class="fdDir" style="padding-left:' + (depth * 16) + 'px">' +
-                 '<span class="fdTw" onclick="fdToggleDir(\'' + d.id + '\');">' + (open ? '▾' : '▸') + '</span>' +
-                 '<input type="checkbox" data-dir="' + d.id + '" onchange="fdPickDir(this);"> ' +
-                 '<span class="fdFolder" onclick="fdToggleDir(\'' + d.id + '\');">\u{1F4C1} ' + fdEsc(d.name) + '</span>' +
+                 '<span class="fdTw" data-dir="' + kk + '" onclick="fdToggleDir(this);">' + (open ? '▾' : '▸') + '</span>' +
+                 '<input type="checkbox" data-dir="' + kk + '" onchange="fdPickDir(this);"> ' +
+                 '<span class="fdFolder" data-dir="' + kk + '" onclick="fdToggleDir(this);">\u{1F4C1} ' + fdEsc(d.name) + '</span>' +
                  '<span class="fdMuted"> (' + fdDirFiles(d).length + ')</span></div>';
             if (open) { draw(d, depth + 1); }
         });
@@ -467,9 +472,30 @@ function fdRenderFiles() {
     fdSyncDirBoxes();
 }
 
-function fdToggleDir(id) {
-    if (window.fdOpenDirs == null) window.fdOpenDirs = {};
-    window.fdOpenDirs[id] = (window.fdOpenDirs[id] !== true);
+// Which folders are open is remembered per browser, so the tree comes back the
+// way it was left - after a distribution, and after a reload.
+function fdLoadOpenDirs() {
+    window.fdOpenDirs = {};
+    try {
+        var raw = localStorage.getItem('fd_open_dirs');
+        if (raw) {
+            var arr = JSON.parse(raw);
+            if (Array.isArray(arr)) { arr.forEach(function (k) { window.fdOpenDirs[k] = true; }); }
+        }
+    } catch (e) { window.fdOpenDirs = {}; }
+}
+function fdSaveOpenDirs() {
+    try {
+        var out = [];
+        for (var k in window.fdOpenDirs) { if (window.fdOpenDirs[k] === true) out.push(k); }
+        localStorage.setItem('fd_open_dirs', JSON.stringify(out.slice(0, 500)));
+    } catch (e) { }
+}
+function fdToggleDir(el) {
+    var key = el.getAttribute('data-dir');
+    if (window.fdOpenDirs == null) fdLoadOpenDirs();
+    window.fdOpenDirs[key] = (window.fdOpenDirs[key] !== true);
+    fdSaveOpenDirs();
     fdRenderFiles();
 }
 
@@ -477,9 +503,10 @@ function fdExpandAll(on) {
     if (window.fdTree == null) return;
     window.fdOpenDirs = {};
     if (on) {
-        var walk = function (n) { n.dirs.forEach(function (d) { window.fdOpenDirs[d.id] = true; walk(d); }); };
+        var walk = function (n) { n.dirs.forEach(function (d) { window.fdOpenDirs[d.key] = true; walk(d); }); };
         walk(window.fdTree);
     }
+    fdSaveOpenDirs();
     fdRenderFiles();
 }
 
