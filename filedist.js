@@ -421,39 +421,129 @@ module.exports.filedist = function (parent) {
         return { fullpath: full, path: serverpath, name: filename };
     };
 
+    // ------------------------------------------------------------------
+    //  File transfer
+    //
+    //  Upstream read the whole file through a stream and pushed every chunk
+    //  straight into the agent socket. Nothing paced it: the disk is fast, the
+    //  socket is not, and everything not yet on the wire piles up in memory.
+    //  Hex doubles the size on top of that, so 61 MB to ten agents meant well
+    //  over a gigabyte queued at once - enough for the OOM killer to take the
+    //  whole server down.
+    //
+    //  Now transfers are queued with a small number running at a time, each one
+    //  reads a chunk only when the socket has drained, and a transfer stops as
+    //  soon as its agent disconnects.
+    // ------------------------------------------------------------------
+
+    var XFER_PARALLEL = 2;                  // transfers running at once, server-wide
+    var XFER_CHUNK = 64 * 1024;             // bytes read per step
+    var XFER_HIGH_WATER = 2 * 1024 * 1024;  // pause while this much is queued on the socket
+    var XFER_PACE_MS = 4;                   // step delay when the socket depth is unknown
+
+    obj.xferQueue = [];
+    obj.xferActive = 0;
+    obj.xferRunning = {};   // "node|path" of the transfers in flight
+
+    // Different MeshCentral versions expose the agent socket differently, so the
+    // usual places are probed. null means "cannot tell", and then a fixed pace is
+    // used instead of waiting for a number that will never come.
+    obj.socketBacklog = function (agent) {
+        try {
+            if (typeof agent.bufferedAmount == 'number') return agent.bufferedAmount;
+            if ((agent.ws != null) && (typeof agent.ws.bufferedAmount == 'number')) return agent.ws.bufferedAmount;
+            if ((agent._socket != null) && (typeof agent._socket.bufferSize == 'number')) return agent._socket.bufferSize;
+            if ((agent.ws != null) && (agent.ws._socket != null) && (typeof agent.ws._socket.bufferSize == 'number')) return agent.ws._socket.bufferSize;
+        } catch (e) { }
+        return null;
+    };
+
     obj.sendFile = function(comp, serverpath, clientpath, size) {
-        const command = {
-            action: 'plugin',
-            plugin: PLUGIN_L,
-            pluginaction: 'sendFile',
-            clientpath: clientpath
-        };
         var realPath = obj.getServerFilePath(serverpath);
         if (realPath == null) {
             obj.debug('PLUGIN', PLUGIN_C, 'Refusing to send an unusable server path (' + serverpath + ') to ' + comp);
             return;
         }
-        try {
-            obj.debug('PLUGIN', PLUGIN_C, 'Sending file to ' + comp);
-            var fs = require('fs');
-            var path = realPath.fullpath;
-            try {
-                fs.statSync(path);
-                var readStream = fs.createReadStream(path, { encoding: "hex" });
-                readStream.on('data', function (chunk) {
-                    command.data = chunk;
-                    obj.meshServer.webserver.wsagents[comp].send(JSON.stringify(command));
-                })
-                readStream.on('end', function (chunk) {
-                    command.data = 'END';
-                    obj.meshServer.webserver.wsagents[comp].send(JSON.stringify(command));
-                })
-            } catch (e) {
-                obj.debug('PLUGIN', PLUGIN_C, 'Could not send file (' + serverpath + ') to ' + comp + '. File may be missing. Info: ' + e.stack);
-            }
-        } catch (e) {
-            obj.debug('PLUGIN', PLUGIN_C, 'Could not send file to ' + comp + e.stack);
+        try { require('fs').statSync(realPath.fullpath); }
+        catch (e) {
+            obj.debug('PLUGIN', PLUGIN_C, 'Not sending ' + serverpath + ' to ' + comp + ': the file is missing on the server');
+            return;
         }
+        // One transfer per node and path: a repeated request while one is already
+        // queued or in flight would only duplicate the work.
+        var key = comp + '|' + clientpath;
+        if (obj.xferRunning[key] === true) return;
+        for (var i = 0; i < obj.xferQueue.length; i++) {
+            if (obj.xferQueue[i].key == key) return;
+        }
+        obj.xferQueue.push({ key: key, comp: comp, fullpath: realPath.fullpath, clientpath: clientpath, serverpath: serverpath });
+        obj.xferPump();
+    };
+
+    obj.xferPump = function () {
+        while ((obj.xferActive < XFER_PARALLEL) && (obj.xferQueue.length > 0)) {
+            var job = obj.xferQueue.shift();
+            obj.xferActive++;
+            obj.xferRunning[job.key] = true;
+            (function (k) {
+                obj.xferRun(job, function () {
+                    delete obj.xferRunning[k];
+                    obj.xferActive--;
+                    obj.xferPump();
+                });
+            })(job.key);
+        }
+    };
+
+    obj.xferRun = function (job, done) {
+        var fs = require('fs');
+        var fd = null, finished = false, buf = null;
+        try {
+            fd = fs.openSync(job.fullpath, 'r');
+            buf = Buffer.alloc(XFER_CHUNK);
+        } catch (e) {
+            obj.debug('PLUGIN', PLUGIN_C, 'Could not open ' + job.serverpath + ': ' + e);
+            done(); return;
+        }
+        var finish = function (why) {
+            if (finished) return;
+            finished = true;
+            try { fs.closeSync(fd); } catch (e) { }
+            if (why != null) { obj.debug('PLUGIN', PLUGIN_C, 'Transfer of ' + job.clientpath + ' to ' + job.comp + ' stopped: ' + why); }
+            done();
+        };
+        var sent = 0;
+        obj.debug('PLUGIN', PLUGIN_C, 'Sending ' + job.clientpath + ' to ' + job.comp);
+
+        var step = function () {
+            if (finished) return;
+            var agent = obj.meshServer.webserver.wsagents[job.comp];
+            if (agent == null) { finish('the agent disconnected'); return; }
+
+            var backlog = obj.socketBacklog(agent);
+            if ((backlog != null) && (backlog > XFER_HIGH_WATER)) { setTimeout(step, 50); return; }
+
+            var n = 0;
+            try { n = fs.readSync(fd, buf, 0, XFER_CHUNK, null); }
+            catch (e) { finish('read error: ' + e); return; }
+
+            try {
+                if (n <= 0) {
+                    agent.send(JSON.stringify({ action: 'plugin', plugin: PLUGIN_L, pluginaction: 'sendFile',
+                                               clientpath: job.clientpath, data: 'END' }));
+                    obj.debug('PLUGIN', PLUGIN_C, 'Sent ' + sent + ' bytes of ' + job.clientpath + ' to ' + job.comp);
+                    finish(null); return;
+                }
+                agent.send(JSON.stringify({ action: 'plugin', plugin: PLUGIN_L, pluginaction: 'sendFile',
+                                           clientpath: job.clientpath, data: buf.toString('hex', 0, n) }));
+                sent += n;
+            } catch (e) { finish('send failed: ' + e); return; }
+
+            // With a known socket depth the next chunk can follow immediately;
+            // without one, a small delay keeps the queue from growing unchecked.
+            if (backlog == null) { setTimeout(step, XFER_PACE_MS); } else { setImmediate(step); }
+        };
+        step();
     };
 
     obj.updateFrontEnd = async function(ids){
