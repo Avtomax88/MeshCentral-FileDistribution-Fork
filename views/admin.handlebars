@@ -48,8 +48,18 @@
     #fdFileBox { border: 1px solid #d8d8d8; overflow: auto; min-height: 0; flex: 1; }
     .fdFile { display: block; padding: 3px 5px; cursor: pointer; }
     .fdDir { padding: 3px 5px; white-space: nowrap; }
+    .fdOvRow td { vertical-align: middle; }
+    .fdOvDetail td { padding-top: 0; border-top: 0; }
+    .fdFail { color: #b03030; }
     .fdTw { display: inline-block; width: 12px; cursor: pointer; color: #666; user-select: none; }
     .fdFolder { cursor: pointer; }
+    /* Whether a file is part of a distribution, shown at the right of its row. */
+    .fdFile { display: flex; align-items: center; }
+    .fdFn { flex: 1; overflow: hidden; text-overflow: ellipsis; }
+    .fdUse { margin-left: 8px; font-size: 11px; padding: 0 6px; border-radius: 8px; white-space: nowrap; }
+    .fdUse.yes { background: #eaf6ea; border: 1px solid #a6d2a6; color: #20521f; }
+    .fdUse.no { color: #999; }
+    .fdUseHead { float: right; color: #666; font-weight: normal; margin-right: 6px; }
     .fdFolder:hover { text-decoration: underline; }
     .fdFile:hover { background: #eef4fb; }
     .fdFile.sel { background: #dceaf7; font-weight: bold; }
@@ -107,7 +117,8 @@
 
     <div class="fdRow fdGrow">
       <div class="fdCol" style="flex:2;display:flex;flex-direction:column;">
-        <label class="fdFixed" data-i18n="fileFromMyFiles">File from My Files</label>
+        <label class="fdFixed"><span data-i18n="fileFromMyFiles">File from My Files</span>
+          <span class="fdUseHead" data-i18n="inUseHead">distributed</span></label>
         <div id="fdFileBox"></div>
         <div class="fdMuted" style="margin-top:4px;">
           <span id="fdFileCount"></span>
@@ -279,7 +290,7 @@ function fdToggleBig() {
 }
 // Panel heights are remembered per browser. Each panel body carries the resize
 // handle now, and its children stretch to follow.
-var FD_DEF_H = [190, 300, 220];
+var FD_DEF_H = [190, 300, null];   // null = height follows the content
 function fdPanels() { return document.querySelectorAll('.fdPanelBody'); }
 function fdLoadHeights() {
     var saved = {};
@@ -287,20 +298,35 @@ function fdLoadHeights() {
     var ps = fdPanels();
     for (var i = 0; i < ps.length; i++) {
         var h = saved[i];
-        ps[i].style.height = ((typeof h == 'number') && (h > 30) ? h : FD_DEF_H[i] || 240) + 'px';
+        if ((typeof h == 'number') && (h > 30)) { ps[i].style.height = h + 'px'; continue; }
+        // A panel with no stored height and no default simply grows with what is
+        // in it; dragging its corner still fixes a height, which is then kept.
+        if (FD_DEF_H[i] == null) { ps[i].style.height = 'auto'; ps[i].style.overflow = 'visible'; }
+        else { ps[i].style.height = FD_DEF_H[i] + 'px'; }
     }
 }
 function fdSaveHeights() {
     var ps = fdPanels(), out = {};
-    for (var i = 0; i < ps.length; i++) { out[i] = ps[i].offsetHeight; }
+    for (var i = 0; i < ps.length; i++) {
+        // Only a panel the operator actually sized is remembered; an auto one is
+        // left alone so it keeps following its content.
+        if ((FD_DEF_H[i] == null) && (ps[i].style.height == 'auto')) continue;
+        out[i] = ps[i].offsetHeight;
+    }
     try { localStorage.setItem('fd_panel_heights', JSON.stringify(out)); } catch (e) { }
 }
 function fdWatchHeights() {
     if (typeof ResizeObserver != 'function') return;
     var t = null;
-    var ro = new ResizeObserver(function () {
-        if (t) clearTimeout(t);
-        t = setTimeout(fdSaveHeights, 400);
+    var ro = new ResizeObserver(function (entries) {
+        for (var i = 0; i < entries.length; i++) {
+            // An auto panel changes size because its content did, which is not a
+            // height worth remembering.
+            if (entries[i].target.style.height == 'auto') continue;
+            if (t) clearTimeout(t);
+            t = setTimeout(fdSaveHeights, 400);
+            return;
+        }
     });
     var ps = fdPanels();
     for (var i = 0; i < ps.length; i++) { ro.observe(ps[i]); }
@@ -308,8 +334,9 @@ function fdWatchHeights() {
 function fdTallMode(on) {
     var ps = fdPanels();
     for (var i = 0; i < ps.length; i++) {
-        ps[i].style.height = on ? Math.max(320, Math.round((window.innerHeight - 180) / ps.length)) + 'px'
-                                : ((FD_DEF_H[i] || 240) + 'px');
+        if (on) { ps[i].style.height = Math.max(320, Math.round((window.innerHeight - 180) / ps.length)) + 'px'; ps[i].style.overflow = 'hidden'; }
+        else if (FD_DEF_H[i] == null) { ps[i].style.height = 'auto'; ps[i].style.overflow = 'visible'; }
+        else { ps[i].style.height = FD_DEF_H[i] + 'px'; }
     }
     if (!on) { fdLoadHeights(); }
 }
@@ -334,6 +361,7 @@ function fdInit() {
     fdRenderFiles();
     fdRenderRecent();
     fdApplyPreselect();
+    fdLoadOpenRows();
     fdLoadHeights();
     fdWatchHeights();
     fdHost().pluginHandler.filedist.loadOverview = function (msg) { fdOnOverview(msg.event); };
@@ -457,14 +485,23 @@ function fdRenderFiles() {
                  '<span class="fdTw" data-dir="' + kk + '" onclick="fdToggleDir(this);">' + (open ? '▾' : '▸') + '</span>' +
                  '<input type="checkbox" data-dir="' + kk + '" onchange="fdPickDir(this);"> ' +
                  '<span class="fdFolder" data-dir="' + kk + '" onclick="fdToggleDir(this);">\u{1F4C1} ' + fdEsc(d.name) + '</span>' +
-                 '<span class="fdMuted"> (' + fdDirFiles(d).length + ')</span></div>';
+                 '<span class="fdMuted"> (' + fdDirFiles(d).length + ')</span>' +
+                 (function () {
+                     if (window.fdInUse == null) return '';
+                     var n = 0;
+                     fdDirFiles(d).forEach(function (lp) { if (window.fdInUse[lp] === true) n++; });
+                     return (n > 0) ? '<span class="fdUse yes">' + T('inUseN', n) + '</span>' : '';
+                 })() + '</div>';
             if (open) { draw(d, depth + 1); }
         });
         node.files.forEach(function (f) {
+            var used = (window.fdInUse != null) && (window.fdInUse[f.linkpath] === true);
             h += '<label class="fdFile" style="padding-left:' + ((depth * 16) + 18) + 'px">' +
                  '<input type="checkbox" data-p="' + fdEsc(f.linkpath) + '"' +
                  ((fdPicked.indexOf(f.linkpath) >= 0) ? ' checked' : '') + ' onchange="fdPickFile(this);"> ' +
-                 fdEsc(f.name) + '</label>';
+                 '<span class="fdFn">' + fdEsc(f.name) + '</span>' +
+                 '<span class="fdUse ' + (used ? 'yes' : 'no') + '">' + T(used ? 'inUseYes' : 'inUseNo') + '</span>' +
+                 '</label>';
         });
     };
     draw(window.fdTree, 0);
@@ -771,6 +808,14 @@ function fdFileNice(linkpath) {
     for (var i = 0; i < fdFiles.length; i++) { if (fdFiles[i].linkpath == linkpath) return fdFiles[i].nicepath; }
     return linkpath;
 }
+// Which server files are part of at least one distribution. Rebuilt whenever the
+// overview arrives, so the tree reflects the current state.
+function fdInUseSet() {
+    var set = {};
+    (fdOverview || []).forEach(function (m) { if (m.serverpath) set[m.serverpath] = true; });
+    return set;
+}
+
 function fdState(m) {
     var st = (m && m.state) ? String(m.state) : 'pending';
     return (['delivered', 'sending', 'failed', 'pending'].indexOf(st) >= 0) ? st : 'pending';
@@ -781,7 +826,7 @@ function fdOnOverview(ev) {
     var groups = {};
     fdOverview.forEach(function (m) {
         var key = m.serverpath + '\u0000' + m.clientpath;
-        if (groups[key] == null) groups[key] = { serverpath: m.serverpath, clientpath: m.clientpath, ids: [], nodes: [], states: [], infos: [] };
+        if (groups[key] == null) groups[key] = { key: key, serverpath: m.serverpath, clientpath: m.clientpath, ids: [], nodes: [], states: [], infos: [] };
         groups[key].ids.push(m._id);
         groups[key].nodes.push(m.node);
         groups[key].states.push(fdState(m));
@@ -790,28 +835,79 @@ function fdOnOverview(ev) {
     var keys = Object.keys(groups).sort();
     var body = document.getElementById('fdOvBody');
     body.innerHTML = '';
+    if (window.fdOpenRows == null) { window.fdOpenRows = {}; }
     var waiting = 0;
+
     keys.forEach(function (k, idx) {
         var g = groups[k];
-        var done = 0;
-        var chips = g.nodes.map(function (n, j) {
-            var st = g.states[j];
+        var done = 0, failed = 0;
+        g.states.forEach(function (st) {
             if (st == 'delivered') { done++; } else { waiting++; }
-            var tip = T('state_' + st) + (g.infos[j] ? (' \u2014 ' + g.infos[j]) : '');
-            return '<span class="fdChip st-' + st + '" title="' + fdEsc(tip) + '">' +
-                   '<span class="fdDot2"></span>' + fdEsc(fdNodeName(n)) +
-                   '<span class="x" title="' + fdEsc(T('removeOne')) + '" onclick="fdRemoveOne(' + idx + ',' + j + ');">\u00d7</span></span>';
-        }).join('');
+            if (st == 'failed') { failed++; }
+        });
+        var open = (window.fdOpenRows[k] === true);
+
+        // One row per distribution. The device list only appears when the row is
+        // opened, so a page full of distributions stays readable.
+        var kk = fdEsc(k);
+        var summary = T('deliveredOf', done, g.nodes.length);
+        if (failed > 0) { summary += ' <span class="fdFail">• ' + T('failedCount', failed) + '</span>'; }
+
         var tr = body.insertRow(-1);
+        tr.className = 'fdOvRow';
         tr.innerHTML =
-            '<td>' + fdEsc(fdFileNice(g.serverpath)) + '</td>' +
+            '<td><span class="fdTw" data-row="' + kk + '" onclick="fdToggleRow(this);">' + (open ? '▾' : '▸') + '</span> ' +
+                fdEsc(fdFileNice(g.serverpath)) + '</td>' +
             '<td class="fdMono">' + fdEsc(g.clientpath) + '</td>' +
-            '<td>' + T('deliveredOf', done, g.nodes.length) + '<div class="fdNodeChips">' + chips + '</div></td>' +
+            '<td data-row="' + kk + '" onclick="fdToggleRow(this);" style="cursor:pointer;">' + summary + '</td>' +
             '<td><button onclick="fdRemoveGroup(' + idx + ');">' + T('removeAll') + '</button></td>';
+
+        if (open) {
+            var chips = g.nodes.map(function (n, j) {
+                var st = g.states[j];
+                var tip = T('state_' + st) + (g.infos[j] ? (' — ' + g.infos[j]) : '');
+                return '<span class="fdChip st-' + st + '" title="' + fdEsc(tip) + '">' +
+                       '<span class="fdDot2"></span>' + fdEsc(fdNodeName(n)) +
+                       '<span class="x" title="' + fdEsc(T('removeOne')) + '" onclick="fdRemoveOne(' + idx + ',' + j + ');">×</span></span>';
+            }).join('');
+            var tr2 = body.insertRow(-1);
+            tr2.className = 'fdOvDetail';
+            tr2.innerHTML = '<td colspan="4"><div class="fdNodeChips">' + chips + '</div></td>';
+        }
     });
+
     window.fdGroups = keys.map(function (k) { return groups[k]; });
     document.getElementById('fdOvEmpty').style.display = (keys.length == 0) ? '' : 'none';
     fdAutoRefresh(waiting > 0);
+    // The file tree shows which files are distributed, so it follows this list.
+    window.fdInUse = fdInUseSet();
+    try { fdRenderFiles(); } catch (e) { }
+}
+
+// Open rows are remembered per browser, so a refresh - including the automatic
+// one while files are still on their way - does not collapse what is being
+// watched.
+function fdToggleRow(el) {
+    var k = el.getAttribute('data-row');
+    if (window.fdOpenRows == null) window.fdOpenRows = {};
+    window.fdOpenRows[k] = (window.fdOpenRows[k] !== true);
+    try {
+        var out = [];
+        for (var x in window.fdOpenRows) { if (window.fdOpenRows[x] === true) out.push(x); }
+        localStorage.setItem('fd_open_rows', JSON.stringify(out.slice(0, 200)));
+    } catch (e) { }
+    fdOnOverview({ maps: fdOverview });
+}
+
+function fdLoadOpenRows() {
+    window.fdOpenRows = {};
+    try {
+        var raw = localStorage.getItem('fd_open_rows');
+        if (raw) {
+            var arr = JSON.parse(raw);
+            if (Array.isArray(arr)) { arr.forEach(function (k) { window.fdOpenRows[k] = true; }); }
+        }
+    } catch (e) { window.fdOpenRows = {}; }
 }
 
 // While anything is still on its way, the overview refreshes itself. It stops on
