@@ -849,17 +849,20 @@ function fdOnOverview(ev) {
 
         // One row per distribution. The device list only appears when the row is
         // opened, so a page full of distributions stays readable.
-        var kk = fdEsc(k);
+        //
+        // The row index travels in the attribute, not the key itself: a key joins
+        // two paths with a NUL byte, which cannot survive a round trip through an
+        // HTML attribute, so the value read back never matched.
         var summary = T('deliveredOf', done, g.nodes.length);
         if (failed > 0) { summary += ' <span class="fdFail">• ' + T('failedCount', failed) + '</span>'; }
 
         var tr = body.insertRow(-1);
         tr.className = 'fdOvRow';
         tr.innerHTML =
-            '<td><span class="fdTw" data-row="' + kk + '" onclick="fdToggleRow(this);">' + (open ? '▾' : '▸') + '</span> ' +
+            '<td><span class="fdTw" data-row="' + idx + '" onclick="fdToggleRow(this);">' + (open ? '▾' : '▸') + '</span> ' +
                 fdEsc(fdFileNice(g.serverpath)) + '</td>' +
             '<td class="fdMono">' + fdEsc(g.clientpath) + '</td>' +
-            '<td data-row="' + kk + '" onclick="fdToggleRow(this);" style="cursor:pointer;">' + summary + '</td>' +
+            '<td data-row="' + idx + '" onclick="fdToggleRow(this);" style="cursor:pointer;">' + summary + '</td>' +
             '<td><button onclick="fdRemoveGroup(' + idx + ');">' + T('removeAll') + '</button></td>';
 
         if (open) {
@@ -888,7 +891,10 @@ function fdOnOverview(ev) {
 // one while files are still on their way - does not collapse what is being
 // watched.
 function fdToggleRow(el) {
-    var k = el.getAttribute('data-row');
+    var idx = parseInt(el.getAttribute('data-row'), 10);
+    var g = (window.fdGroups != null) ? window.fdGroups[idx] : null;
+    if (g == null) return;
+    var k = g.key;
     if (window.fdOpenRows == null) window.fdOpenRows = {};
     window.fdOpenRows[k] = (window.fdOpenRows[k] !== true);
     try {
