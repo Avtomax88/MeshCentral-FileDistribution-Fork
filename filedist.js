@@ -444,6 +444,9 @@ module.exports.filedist = function (parent) {
     obj.xferQueue = [];
     obj.xferActive = 0;
     obj.xferRunning = {};   // "node|path" of the transfers in flight
+    // How far each transfer has got, kept in memory only: it changes constantly
+    // and is worthless once the transfer ends, so it never touches the database.
+    obj.xferProgress = {};  // "node|path" -> { sent, total }
 
     // Different MeshCentral versions expose the agent socket differently, so the
     // usual places are probed. null means "cannot tell", and then a fixed pace is
@@ -464,7 +467,8 @@ module.exports.filedist = function (parent) {
             obj.debug('PLUGIN', PLUGIN_C, 'Refusing to send an unusable server path (' + serverpath + ') to ' + comp);
             return;
         }
-        try { require('fs').statSync(realPath.fullpath); }
+        var total = 0;
+        try { total = require('fs').statSync(realPath.fullpath).size; }
         catch (e) {
             obj.debug('PLUGIN', PLUGIN_C, 'Not sending ' + serverpath + ' to ' + comp + ': the file is missing on the server');
             return;
@@ -476,7 +480,7 @@ module.exports.filedist = function (parent) {
         for (var i = 0; i < obj.xferQueue.length; i++) {
             if (obj.xferQueue[i].key == key) return;
         }
-        obj.xferQueue.push({ key: key, comp: comp, fullpath: realPath.fullpath, clientpath: clientpath, serverpath: serverpath });
+        obj.xferQueue.push({ key: key, comp: comp, fullpath: realPath.fullpath, clientpath: clientpath, serverpath: serverpath, total: total });
         obj.xferPump();
     };
 
@@ -508,6 +512,7 @@ module.exports.filedist = function (parent) {
         var finish = function (why) {
             if (finished) return;
             finished = true;
+            delete obj.xferProgress[job.key];
             try { fs.closeSync(fd); } catch (e) { }
             if (why != null) {
                 obj.debug('PLUGIN', PLUGIN_C, 'Transfer of ' + job.clientpath + ' to ' + job.comp + ' stopped: ' + why);
@@ -516,6 +521,7 @@ module.exports.filedist = function (parent) {
             done();
         };
         var sent = 0;
+        obj.xferProgress[job.key] = { sent: 0, total: (job.total | 0) };
         obj.debug('PLUGIN', PLUGIN_C, 'Sending ' + job.clientpath + ' to ' + job.comp);
         try { obj.db.setMapState(job.comp, job.clientpath, 'sending', '').catch(function () { }); } catch (e) { }
 
@@ -541,6 +547,8 @@ module.exports.filedist = function (parent) {
                 agent.send(JSON.stringify({ action: 'plugin', plugin: PLUGIN_L, pluginaction: 'sendFile',
                                            clientpath: job.clientpath, data: buf.toString('hex', 0, n) }));
                 sent += n;
+                var pr = obj.xferProgress[job.key];
+                if (pr != null) { pr.sent = sent; }
             } catch (e) { finish('send failed: ' + e); return; }
 
             // With a known socket depth the next chunk can follow immediately;
@@ -784,7 +792,13 @@ module.exports.filedist = function (parent) {
                 obj.db.getServerFiles()
                 .then(function (maps) {
                     obj.filterMapsByRights(user, maps, function (allowed) {
-                        obj.replyToUser(user, 'overviewData', { maps: allowed });
+                        // Live progress rides along with the records it belongs to,
+                        // so the page needs no second request for it.
+                        allowed.forEach(function (m) {
+                            var pr = obj.xferProgress[m.node + '|' + m.clientpath];
+                            if (pr != null) { m.sent = pr.sent; m.total = pr.total; }
+                        });
+                        obj.replyToUser(user, 'overviewData', { maps: allowed, queued: obj.xferQueue.length, active: obj.xferActive });
                     });
                 })
                 .catch(function () { obj.replyToUser(user, 'overviewData', { maps: [], error: 'The list could not be read.' }); });
