@@ -51,6 +51,7 @@
     .fdOvRow td { vertical-align: middle; }
     .fdOvDetail td { padding-top: 0; border-top: 0; }
     .fdFail { color: #b03030; }
+    .fdMoving { color: #2f6fd0; }
     .fdTw { display: inline-block; width: 12px; cursor: pointer; color: #666; user-select: none; }
     .fdFolder { cursor: pointer; }
     /* Whether a file is part of a distribution, shown at the right of its row. */
@@ -81,6 +82,11 @@
     /* Delivery state of one device, confirmed by its agent. */
     .fdChip.st-delivered { background: #eaf6ea; border-color: #a6d2a6; }
     .fdChip.st-sending   { background: #eaf1fb; border-color: #a9c6ea; }
+    /* A chip being sent fills with the delivered colour from the left, so the
+       same element shows both what is happening and how far it has got. */
+    .fdChip.st-sending.fdFill { background-image: linear-gradient(to right,
+        #cfeacf var(--fdpct, 0%), rgba(0,0,0,0) var(--fdpct, 0%)); background-repeat: no-repeat; }
+    .fdPct { margin-left: 5px; color: #2f6fd0; font-size: 11px; }
     .fdChip.st-failed    { background: #fdeeee; border-color: #e0b4b4; }
     .fdChip.st-pending   { background: #fafafa; }
     .fdDot2 { display: inline-block; width: 7px; height: 7px; border-radius: 50%; margin-right: 5px; }
@@ -816,6 +822,14 @@ function fdInUseSet() {
     return set;
 }
 
+// Percentage of a transfer in flight, or null when nothing is moving. The
+// server sends sent/total only while it is actually pushing this file.
+function fdPct(m) {
+    if ((m == null) || (typeof m.sent != 'number') || (typeof m.total != 'number') || (m.total <= 0)) return null;
+    var p = Math.floor((m.sent / m.total) * 100);
+    return (p < 0) ? 0 : ((p > 100) ? 100 : p);
+}
+
 function fdState(m) {
     var st = (m && m.state) ? String(m.state) : 'pending';
     return (['delivered', 'sending', 'failed', 'pending'].indexOf(st) >= 0) ? st : 'pending';
@@ -826,17 +840,18 @@ function fdOnOverview(ev) {
     var groups = {};
     fdOverview.forEach(function (m) {
         var key = m.serverpath + '\u0000' + m.clientpath;
-        if (groups[key] == null) groups[key] = { key: key, serverpath: m.serverpath, clientpath: m.clientpath, ids: [], nodes: [], states: [], infos: [] };
+        if (groups[key] == null) groups[key] = { key: key, serverpath: m.serverpath, clientpath: m.clientpath, ids: [], nodes: [], states: [], infos: [], pcts: [] };
         groups[key].ids.push(m._id);
         groups[key].nodes.push(m.node);
         groups[key].states.push(fdState(m));
         groups[key].infos.push((m.stateInfo != null) ? String(m.stateInfo) : '');
+        groups[key].pcts.push(fdPct(m));
     });
     var keys = Object.keys(groups).sort();
     var body = document.getElementById('fdOvBody');
     body.innerHTML = '';
     if (window.fdOpenRows == null) { window.fdOpenRows = {}; }
-    var waiting = 0;
+    var waiting = 0, moving = 0;
 
     keys.forEach(function (k, idx) {
         var g = groups[k];
@@ -845,6 +860,7 @@ function fdOnOverview(ev) {
             if (st == 'delivered') { done++; } else { waiting++; }
             if (st == 'failed') { failed++; }
         });
+        g.pcts.forEach(function (p) { if (p != null) moving++; });
         var open = (window.fdOpenRows[k] === true);
 
         // One row per distribution. The device list only appears when the row is
@@ -855,6 +871,12 @@ function fdOnOverview(ev) {
         // HTML attribute, so the value read back never matched.
         var summary = T('deliveredOf', done, g.nodes.length);
         if (failed > 0) { summary += ' <span class="fdFail">• ' + T('failedCount', failed) + '</span>'; }
+        // Rows are collapsed by default, so what is moving right now is said here too.
+        var inflight = 0, pctSum = 0;
+        g.pcts.forEach(function (pp) { if (pp != null) { inflight++; pctSum += pp; } });
+        if (inflight > 0) {
+            summary += ' <span class="fdMoving">• ' + T('sendingNow', inflight, Math.floor(pctSum / inflight)) + '</span>';
+        }
 
         var tr = body.insertRow(-1);
         tr.className = 'fdOvRow';
@@ -868,9 +890,14 @@ function fdOnOverview(ev) {
         if (open) {
             var chips = g.nodes.map(function (n, j) {
                 var st = g.states[j];
-                var tip = T('state_' + st) + (g.infos[j] ? (' — ' + g.infos[j]) : '');
-                return '<span class="fdChip st-' + st + '" title="' + fdEsc(tip) + '">' +
-                       '<span class="fdDot2"></span>' + fdEsc(fdNodeName(n)) +
+                var pct = g.pcts[j];   // null unless this one is on the wire right now
+                var tip = T('state_' + st) + ((pct != null) ? (' ' + pct + '%') : '') +
+                          (g.infos[j] ? (' — ' + g.infos[j]) : '');
+                var cls = 'fdChip st-' + st + ((pct != null) ? ' fdFill' : '');
+                var style = (pct != null) ? (' style="--fdpct:' + pct + '%"') : '';
+                var pctTxt = (pct != null) ? ('<span class="fdPct">' + pct + '%</span>') : '';
+                return '<span class="' + cls + '"' + style + ' title="' + fdEsc(tip) + '">' +
+                       '<span class="fdDot2"></span>' + fdEsc(fdNodeName(n)) + pctTxt +
                        '<span class="x" title="' + fdEsc(T('removeOne')) + '" onclick="fdRemoveOne(' + idx + ',' + j + ');">×</span></span>';
             }).join('');
             var tr2 = body.insertRow(-1);
@@ -881,7 +908,7 @@ function fdOnOverview(ev) {
 
     window.fdGroups = keys.map(function (k) { return groups[k]; });
     document.getElementById('fdOvEmpty').style.display = (keys.length == 0) ? '' : 'none';
-    fdAutoRefresh(waiting > 0);
+    fdAutoRefresh(waiting > 0, moving > 0);
     // The file tree shows which files are distributed, so it follows this list.
     window.fdInUse = fdInUseSet();
     try { fdRenderFiles(); } catch (e) { }
@@ -918,15 +945,14 @@ function fdLoadOpenRows() {
 
 // While anything is still on its way, the overview refreshes itself. It stops on
 // its own once every device has confirmed, so an idle page costs nothing.
-function fdAutoRefresh(on) {
-    if (on) {
-        if (window.fdOvTimer == null) {
-            window.fdOvTimer = setInterval(function () { fdLoadOverview(); }, 5000);
-        }
-    } else if (window.fdOvTimer != null) {
-        clearInterval(window.fdOvTimer);
-        window.fdOvTimer = null;
-    }
+function fdAutoRefresh(on, fast) {
+    // A file actually on the wire is polled often enough for the bar to move;
+    // everything else settles back to the slow beat.
+    var want = on ? (fast ? 1200 : 5000) : 0;
+    if (window.fdOvEvery === want) return;
+    if (window.fdOvTimer != null) { clearInterval(window.fdOvTimer); window.fdOvTimer = null; }
+    window.fdOvEvery = want;
+    if (want > 0) { window.fdOvTimer = setInterval(function () { fdLoadOverview(); }, want); }
 }
 
 function fdRemoveGroup(idx) {
